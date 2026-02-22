@@ -7,7 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local WalkSpeed = 29.5
 local TweenToSpeed = 59
-local DodgeSpeed = 55
+local DodgeSpeed = 29.5
 local DodgeRadius = 30
 local DodgeDuration = 0.35
 local DodgeCooldown = 0.6
@@ -91,7 +91,7 @@ Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(138, 43, 226)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundTransparency = 1
-Title.Text = "TWEEN PANEL [R]"
+Title.Text = "TWEEN PANEL"
 Title.TextColor3 = Color3.fromRGB(138, 43, 226)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 14
@@ -189,7 +189,7 @@ local StartButton = Instance.new("TextButton")
 StartButton.Size = UDim2.new(0.48, 0, 0, 35)
 StartButton.Position = UDim2.new(0, 10, 0, 155)
 StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-StartButton.Text = "START [R]"
+StartButton.Text = "START"
 StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 StartButton.Font = Enum.Font.GothamBold
 StartButton.TextSize = 12
@@ -402,7 +402,7 @@ local function StopAll(reason)
         GrabConnection:Disconnect()
         GrabConnection = nil
     end
-    StartButton.Text = "START [R]"
+    StartButton.Text = "START"
     StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
     if reason then
         PhaseLabel.Text = "Stopped (" .. reason .. ")"
@@ -599,17 +599,6 @@ local function StartTween()
         end
     end)
 end
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.R then
-        if IsRunning then
-            StopAll()
-        else
-            StartTween()
-        end
-    end
-end)
 
 StartButton.MouseButton1Click:Connect(function()
     if not IsRunning then
