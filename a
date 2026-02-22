@@ -1,0 +1,632 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local WalkSpeed = 29.5
+local TweenToSpeed = 59
+local DodgeSpeed = 55
+local DodgeRadius = 30
+local DodgeDuration = 0.35
+local DodgeCooldown = 0.6
+local AutoGrabRange = 8
+
+local IsRunning = false
+local IsDodging = false
+local DodgeStartTime = 0
+local LastDodgeEndTime = 0
+local CurrentDodgeDirection = nil
+local LastHealth = 100
+local Connection = nil
+local GrabConnection = nil
+
+local CurrentPhase = "Idle"
+local CurrentWaypointIndex = 1
+local AllWaypoints = {}
+
+local BrainrotPath1 = {
+    Vector3.new(-475.8, -7.31, 97.53),
+    Vector3.new(-488.04, -5.09, 97.4)
+}
+
+local BrainrotPath2 = {
+    Vector3.new(-474.15, -7.31, 26.64),
+    Vector3.new(-488.04, -5.31, 26.42)
+}
+
+local BasePath1 = {
+    Vector3.new(-484.70, -8.24, 96.42),
+    Vector3.new(-473.36, -10.30, 97.25),
+    Vector3.new(-471.63, -9.90, 9.36)
+}
+
+local BasePath2 = {
+    Vector3.new(-484.27, -8.40, 21.12),
+    Vector3.new(-473.06, -10.30, 21.38),
+    Vector3.new(-471.08, -9.84, 117.21)
+}
+
+local Database = {}
+
+local function LoadDatabase()
+    local animals = ReplicatedStorage:FindFirstChild("Animals", true)
+    if animals and animals:IsA("ModuleScript") then
+        local success, data = pcall(require, animals)
+        if success then
+            for key, info in pairs(data) do
+                if info.Generation then
+                    Database[key] = tonumber(tostring(info.Generation)) or 0
+                end
+            end
+        end
+    end
+end
+
+LoadDatabase()
+
+pcall(function()
+    if game.CoreGui:FindFirstChild("TweenPanel") then
+        game.CoreGui:FindFirstChild("TweenPanel"):Destroy()
+    end
+end)
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TweenPanel"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game.CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 220, 0, 195)
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -98)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(138, 43, 226)
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundTransparency = 1
+Title.Text = "TWEEN PANEL [R]"
+Title.TextColor3 = Color3.fromRGB(138, 43, 226)
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 14
+Title.Parent = MainFrame
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 25, 0, 25)
+CloseButton.Position = UDim2.new(1, -30, 0, 3)
+CloseButton.BackgroundTransparency = 1
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 60, 60)
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 14
+CloseButton.Parent = MainFrame
+
+local function CreateToggle(parent, text, yPos, defaultState)
+    local Container = Instance.new("Frame", parent)
+    Container.Size = UDim2.new(1, -20, 0, 28)
+    Container.Position = UDim2.new(0, 10, 0, yPos)
+    Container.BackgroundTransparency = 1
+
+    local Label = Instance.new("TextLabel", Container)
+    Label.Text = text
+    Label.Font = Enum.Font.GothamBold
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.TextSize = 12
+    Label.BackgroundTransparency = 1
+    Label.Size = UDim2.new(1, -50, 1, 0)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+
+    local SwitchBg = Instance.new("Frame", Container)
+    SwitchBg.Size = UDim2.new(0, 36, 0, 18)
+    SwitchBg.Position = UDim2.new(1, -40, 0.5, -9)
+    SwitchBg.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    Instance.new("UICorner", SwitchBg).CornerRadius = UDim.new(1, 0)
+
+    local Knob = Instance.new("Frame", SwitchBg)
+    Knob.Size = UDim2.new(0, 14, 0, 14)
+    Knob.Position = UDim2.new(0, 2, 0.5, -7)
+    Knob.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+    Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
+
+    local toggled = defaultState
+
+    local function updateVisual()
+        if toggled then
+            Knob.Position = UDim2.new(1, -16, 0.5, -7)
+            Knob.BackgroundColor3 = Color3.fromRGB(180, 100, 255)
+            SwitchBg.BackgroundColor3 = Color3.fromRGB(100, 50, 150)
+        else
+            Knob.Position = UDim2.new(0, 2, 0.5, -7)
+            Knob.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+            SwitchBg.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        end
+    end
+
+    updateVisual()
+
+    SwitchBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            toggled = not toggled
+            updateVisual()
+        end
+    end)
+
+    return function() return toggled end, function(state) toggled = state updateVisual() end
+end
+
+local Separator1 = Instance.new("Frame", MainFrame)
+Separator1.Size = UDim2.new(1, -20, 0, 1)
+Separator1.Position = UDim2.new(0, 10, 0, 32)
+Separator1.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+
+local GetTweenToBrainrot, SetTweenToBrainrot = CreateToggle(MainFrame, "Tween to Brainrot", 38, true)
+local GetTweenToBase, SetTweenToBase = CreateToggle(MainFrame, "Tween to Base", 66, true)
+local GetSmartDodge, SetSmartDodge = CreateToggle(MainFrame, "Smart Dodge", 94, true)
+
+local Separator2 = Instance.new("Frame", MainFrame)
+Separator2.Size = UDim2.new(1, -20, 0, 1)
+Separator2.Position = UDim2.new(0, 10, 0, 124)
+Separator2.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+local PhaseLabel = Instance.new("TextLabel")
+PhaseLabel.Size = UDim2.new(1, -20, 0, 18)
+PhaseLabel.Position = UDim2.new(0, 10, 0, 130)
+PhaseLabel.BackgroundTransparency = 1
+PhaseLabel.Text = "Idle"
+PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+PhaseLabel.Font = Enum.Font.GothamBold
+PhaseLabel.TextSize = 13
+PhaseLabel.TextXAlignment = Enum.TextXAlignment.Center
+PhaseLabel.Parent = MainFrame
+
+local StartButton = Instance.new("TextButton")
+StartButton.Size = UDim2.new(0.48, 0, 0, 35)
+StartButton.Position = UDim2.new(0, 10, 0, 155)
+StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+StartButton.Text = "START [R]"
+StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+StartButton.Font = Enum.Font.GothamBold
+StartButton.TextSize = 12
+StartButton.Parent = MainFrame
+Instance.new("UICorner", StartButton).CornerRadius = UDim.new(0, 8)
+
+local StopButton = Instance.new("TextButton")
+StopButton.Size = UDim2.new(0.48, 0, 0, 35)
+StopButton.Position = UDim2.new(0.52, 0, 0, 155)
+StopButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+StopButton.Text = "STOP"
+StopButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+StopButton.Font = Enum.Font.GothamBold
+StopButton.TextSize = 12
+StopButton.Parent = MainFrame
+Instance.new("UICorner", StopButton).CornerRadius = UDim.new(0, 8)
+
+local function GetMyPlot()
+    local plots = Workspace:FindFirstChild("Plots")
+    if not plots then return nil end
+    for _, plot in pairs(plots:GetChildren()) do
+        for _, obj in pairs(plot:GetDescendants()) do
+            if obj:IsA("TextLabel") and obj.Text then
+                if obj.Text:find(LocalPlayer.Name) or obj.Text:find(LocalPlayer.DisplayName) then
+                    return plot
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function GetMyAnimalTarget()
+    local myPlot = GetMyPlot()
+    if not myPlot then return nil end
+    local animalTarget = myPlot:FindFirstChild("AnimalTarget")
+    if animalTarget and animalTarget:IsA("BasePart") then
+        return animalTarget.Position
+    end
+    return nil
+end
+
+local function GetBestPet()
+    local bestModel, bestValue, bestPos = nil, -1, nil
+    local plots = Workspace:FindFirstChild("Plots")
+    if not plots then return nil, nil, -1 end
+    local myPlot = GetMyPlot()
+    for _, plot in pairs(plots:GetChildren()) do
+        if plot ~= myPlot then
+            for _, obj in pairs(plot:GetDescendants()) do
+                if obj:IsA("Model") and Database[obj.Name] then
+                    local val = Database[obj.Name]
+                    if val > bestValue then
+                        local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+                        if root then
+                            bestValue, bestModel, bestPos = val, obj, root.Position
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestModel, bestPos, bestValue
+end
+
+local function ChooseBrainrotPath(brainrotPos)
+    if not brainrotPos then return BrainrotPath1 end
+    local dist1 = (BrainrotPath1[#BrainrotPath1] - brainrotPos).Magnitude
+    local dist2 = (BrainrotPath2[#BrainrotPath2] - brainrotPos).Magnitude
+    if dist1 < dist2 then
+        return BrainrotPath1
+    else
+        return BrainrotPath2
+    end
+end
+
+local function ChooseBasePath(basePos)
+    if not basePos then return BasePath1 end
+    local dist1 = (BasePath1[#BasePath1] - basePos).Magnitude
+    local dist2 = (BasePath2[#BasePath2] - basePos).Magnitude
+    if dist1 < dist2 then
+        return BasePath1
+    else
+        return BasePath2
+    end
+end
+
+local function GetPerpendicularVector(forward)
+    return Vector3.new(forward.Z, 0, -forward.X).Unit
+end
+
+local function FindNearestThreat(hrp)
+    local closestPlayer = nil
+    local closestDistance = math.huge
+    local closestHrp = nil
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local otherHrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if otherHrp then
+                local distance = (hrp.Position - otherHrp.Position).Magnitude
+                if distance < closestDistance and distance <= DodgeRadius then
+                    closestDistance = distance
+                    closestPlayer = player
+                    closestHrp = otherHrp
+                end
+            end
+        end
+    end
+    return closestPlayer, closestHrp, closestDistance
+end
+
+local function CalculateDodgeDirection(hrp, threatHrp)
+    local toThreat = (threatHrp.Position - hrp.Position)
+    toThreat = Vector3.new(toThreat.X, 0, toThreat.Z).Unit
+    local threatVelocity = threatHrp.AssemblyLinearVelocity
+    local threatMoveDir = Vector3.new(threatVelocity.X, 0, threatVelocity.Z)
+    local threatSpeed = threatMoveDir.Magnitude
+    if threatSpeed > 1 then
+        threatMoveDir = threatMoveDir.Unit
+    else
+        threatMoveDir = Vector3.new(0, 0, 0)
+    end
+    local leftDir = GetPerpendicularVector(toThreat)
+    local rightDir = -leftDir
+    local leftScore = 100
+    local rightScore = 100
+    if threatSpeed > 5 then
+        local threatGoingLeft = threatMoveDir:Dot(leftDir)
+        local threatGoingRight = threatMoveDir:Dot(rightDir)
+        if threatGoingLeft > 0.3 then
+            rightScore = rightScore + 50
+            leftScore = leftScore - 30
+        end
+        if threatGoingRight > 0.3 then
+            leftScore = leftScore + 50
+            rightScore = rightScore - 30
+        end
+    end
+    if leftScore >= rightScore then
+        return leftDir
+    else
+        return rightDir
+    end
+end
+
+local function IsRagdolledOrHit(humanoid, hrp)
+    local state = humanoid:GetState()
+    if state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.Physics or state == Enum.HumanoidStateType.FallingDown then
+        return true, "Ragdolled"
+    end
+    local currentHealth = humanoid.Health
+    if currentHealth < LastHealth then
+        LastHealth = currentHealth
+        return true, "Hit"
+    end
+    LastHealth = currentHealth
+    local vel = hrp.AssemblyLinearVelocity
+    local horizontalSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+    if horizontalSpeed > 80 then
+        return true, "Knockback"
+    end
+    return false, nil
+end
+
+local function GetPromptPosition(prompt)
+    local p = prompt.Parent
+    if p:IsA("Attachment") then return p.WorldPosition end
+    if p:IsA("BasePart") then return p.Position end
+    if p:IsA("Model") then
+        local pr = p.PrimaryPart or p:FindFirstChildWhichIsA("BasePart")
+        if pr then return pr.Position end
+    end
+    local f = p:FindFirstChildWhichIsA("BasePart", true)
+    return f and f.Position or nil
+end
+
+local function FindNearestStealPrompt()
+    local char = LocalPlayer.Character
+    if not char then return nil, math.huge end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil, math.huge end
+    local nearest, minDist = nil, math.huge
+    local plots = Workspace:FindFirstChild("Plots")
+    if plots then
+        for _, obj in ipairs(plots:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") and obj.Enabled and obj.ActionText == "Steal" then
+                local pos = GetPromptPosition(obj)
+                if pos then
+                    local dist = (hrp.Position - pos).Magnitude
+                    if dist < minDist then minDist, nearest = dist, obj end
+                end
+            end
+        end
+    end
+    return nearest, minDist
+end
+
+local function StopAll(reason)
+    IsRunning = false
+    IsDodging = false
+    CurrentDodgeDirection = nil
+    CurrentPhase = "Idle"
+    CurrentWaypointIndex = 1
+    AllWaypoints = {}
+    if Connection then
+        Connection:Disconnect()
+        Connection = nil
+    end
+    if GrabConnection then
+        GrabConnection:Disconnect()
+        GrabConnection = nil
+    end
+    StartButton.Text = "START [R]"
+    StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+    if reason then
+        PhaseLabel.Text = "Stopped (" .. reason .. ")"
+        PhaseLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    else
+        PhaseLabel.Text = "Idle"
+        PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end
+end
+
+local function StartGrabbing()
+    if GrabConnection then return end
+    GrabConnection = RunService.Heartbeat:Connect(function()
+        local prompt, dist = FindNearestStealPrompt()
+        if prompt and dist <= AutoGrabRange and prompt.Enabled then
+            pcall(function() fireproximityprompt(prompt) end)
+        end
+    end)
+end
+
+local function StopGrabbing()
+    if GrabConnection then
+        GrabConnection:Disconnect()
+        GrabConnection = nil
+    end
+end
+
+local function StartTweenToBase()
+    StopGrabbing()
+    local myBase = GetMyAnimalTarget()
+    if not myBase then
+        StopAll("No Base")
+        return
+    end
+    local path = ChooseBasePath(myBase)
+    AllWaypoints = {}
+    for _, wp in ipairs(path) do
+        table.insert(AllWaypoints, wp)
+    end
+    table.insert(AllWaypoints, myBase)
+    CurrentWaypointIndex = 1
+    CurrentPhase = "ToBase"
+    PhaseLabel.Text = "Stealing... Going to Base!"
+    PhaseLabel.TextColor3 = Color3.fromRGB(180, 130, 255)
+end
+
+local function StartTween()
+    if IsRunning then return end
+    local tb = GetTweenToBrainrot()
+    local tbase = GetTweenToBase()
+    if not tb and not tbase then
+        PhaseLabel.Text = "Nothing selected!"
+        PhaseLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        return
+    end
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            LastHealth = humanoid.Health
+        end
+    end
+    IsRunning = true
+    IsDodging = false
+    CurrentDodgeDirection = nil
+    LastDodgeEndTime = 0
+    StartButton.Text = "RUNNING..."
+    StartButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    if tb then
+        local bestModel, brainrotPos, bestValue = GetBestPet()
+        if not brainrotPos then
+            StopAll("No Brainrot")
+            return
+        end
+        local path = ChooseBrainrotPath(brainrotPos)
+        AllWaypoints = {}
+        for _, wp in ipairs(path) do
+            table.insert(AllWaypoints, wp)
+        end
+        table.insert(AllWaypoints, brainrotPos)
+        CurrentWaypointIndex = 1
+        CurrentPhase = "ToBrainrot"
+        PhaseLabel.Text = "Going to Brainrot..."
+        PhaseLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+        StartGrabbing()
+    elseif tbase then
+        CurrentPhase = "WaitForSteal"
+        PhaseLabel.Text = "Waiting for steal..."
+        PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end
+    Connection = RunService.Heartbeat:Connect(function()
+        if not IsRunning then return end
+        local character = LocalPlayer.Character
+        if not character then return end
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character:FindFirstChild("Humanoid")
+        if not hrp or not humanoid or humanoid.Health <= 0 then return end
+        if CurrentPhase == "ToBase" then
+            local shouldStop, stopReason = IsRagdolledOrHit(humanoid, hrp)
+            if shouldStop then
+                StopAll(stopReason)
+                return
+            end
+        end
+        local isStealing = humanoid.WalkSpeed <= 25
+        if CurrentPhase == "WaitForSteal" then
+            if isStealing then
+                if GetTweenToBase() then
+                    StartTweenToBase()
+                end
+            end
+            return
+        end
+        if CurrentPhase == "AtBrainrot" then
+            if isStealing then
+                PhaseLabel.Text = "Stealing..."
+                PhaseLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
+                if GetTweenToBase() then
+                    StartTweenToBase()
+                end
+            end
+            return
+        end
+        if CurrentPhase == "ToBrainrot" then
+            if CurrentWaypointIndex > #AllWaypoints then
+                CurrentPhase = "AtBrainrot"
+                PhaseLabel.Text = "At Brainrot, waiting..."
+                PhaseLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
+                hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+                return
+            end
+            local target = AllWaypoints[CurrentWaypointIndex]
+            local direction = Vector3.new(target.X - hrp.Position.X, 0, target.Z - hrp.Position.Z)
+            local distance = direction.Magnitude
+            if distance < 4 then
+                CurrentWaypointIndex = CurrentWaypointIndex + 1
+                return
+            end
+            local moveDir = direction.Unit
+            hrp.AssemblyLinearVelocity = Vector3.new(moveDir.X * TweenToSpeed, hrp.AssemblyLinearVelocity.Y, moveDir.Z * TweenToSpeed)
+            return
+        end
+        if CurrentPhase == "ToBase" then
+            if CurrentWaypointIndex > #AllWaypoints then
+                StopAll()
+                PhaseLabel.Text = "Complete!"
+                PhaseLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+                hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+                return
+            end
+            local target = AllWaypoints[CurrentWaypointIndex]
+            local direction = Vector3.new(target.X - hrp.Position.X, 0, target.Z - hrp.Position.Z)
+            local distance = direction.Magnitude
+            if distance < 4 then
+                CurrentWaypointIndex = CurrentWaypointIndex + 1
+                return
+            end
+            local moveDir = direction.Unit
+            local now = tick()
+            local finalVelocity
+            if GetSmartDodge() then
+                if IsDodging then
+                    local dodgeElapsed = now - DodgeStartTime
+                    if dodgeElapsed < DodgeDuration then
+                        finalVelocity = CurrentDodgeDirection * DodgeSpeed
+                        PhaseLabel.Text = "DODGING!"
+                        PhaseLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                    else
+                        IsDodging = false
+                        CurrentDodgeDirection = nil
+                        LastDodgeEndTime = now
+                        finalVelocity = moveDir * WalkSpeed
+                        PhaseLabel.Text = "Going to Base..."
+                        PhaseLabel.TextColor3 = Color3.fromRGB(180, 130, 255)
+                    end
+                else
+                    local canDodge = (now - LastDodgeEndTime) > DodgeCooldown
+                    local threatPlayer, threatHrp = FindNearestThreat(hrp)
+                    if threatPlayer and threatHrp and canDodge then
+                        IsDodging = true
+                        DodgeStartTime = now
+                        CurrentDodgeDirection = CalculateDodgeDirection(hrp, threatHrp)
+                        finalVelocity = CurrentDodgeDirection * DodgeSpeed
+                        PhaseLabel.Text = "DODGING!"
+                        PhaseLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                    else
+                        finalVelocity = moveDir * WalkSpeed
+                    end
+                end
+            else
+                finalVelocity = moveDir * WalkSpeed
+            end
+            hrp.AssemblyLinearVelocity = Vector3.new(finalVelocity.X, hrp.AssemblyLinearVelocity.Y, finalVelocity.Z)
+        end
+    end)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.R then
+        if IsRunning then
+            StopAll()
+        else
+            StartTween()
+        end
+    end
+end)
+
+StartButton.MouseButton1Click:Connect(function()
+    if not IsRunning then
+        StartTween()
+    end
+end)
+
+StopButton.MouseButton1Click:Connect(function()
+    StopAll()
+end)
+
+CloseButton.MouseButton1Click:Connect(function()
+    StopAll()
+    ScreenGui:Destroy()
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    StopAll()
+    LastHealth = 100
+end)
