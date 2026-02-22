@@ -178,7 +178,7 @@ local PhaseLabel = Instance.new("TextLabel")
 PhaseLabel.Size = UDim2.new(1, -20, 0, 18)
 PhaseLabel.Position = UDim2.new(0, 10, 0, 130)
 PhaseLabel.BackgroundTransparency = 1
-PhaseLabel.Text = "Idle"
+PhaseLabel.Text = "Idle [R to Start]"
 PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
 PhaseLabel.Font = Enum.Font.GothamBold
 PhaseLabel.TextSize = 13
@@ -189,7 +189,7 @@ local StartButton = Instance.new("TextButton")
 StartButton.Size = UDim2.new(0.48, 0, 0, 35)
 StartButton.Position = UDim2.new(0, 10, 0, 155)
 StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-StartButton.Text = "START"
+StartButton.Text = "START [R]"
 StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 StartButton.Font = Enum.Font.GothamBold
 StartButton.TextSize = 12
@@ -402,13 +402,13 @@ local function StopAll(reason)
         GrabConnection:Disconnect()
         GrabConnection = nil
     end
-    StartButton.Text = "START"
+    StartButton.Text = "START [R]"
     StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
     if reason then
         PhaseLabel.Text = "Stopped (" .. reason .. ")"
         PhaseLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
     else
-        PhaseLabel.Text = "Idle"
+        PhaseLabel.Text = "Idle [R to Start]"
         PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
     end
 end
@@ -599,6 +599,17 @@ local function StartTween()
         end
     end)
 end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.R then
+        if IsRunning then
+            StopAll()
+        else
+            StartTween()
+        end
+    end
+end)
 
 StartButton.MouseButton1Click:Connect(function()
     if not IsRunning then
