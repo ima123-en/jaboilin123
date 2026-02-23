@@ -17,7 +17,7 @@ local NumberUtils = require(Utils:WaitForChild("NumberUtils"))
 
 local TweenToSpeed = 57
 local WalkSpeed = 29.5
-local WalkSpeedSlow = 28
+local WalkSpeedSlow = 28.5
 local SlowSpeedDuration = 0.4
 local StandStillDuration = -1
 local DodgeSpeed = 29
