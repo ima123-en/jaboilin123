@@ -28,6 +28,8 @@ local DodgeStartDelay = 0.6
 local DodgePredictionTime = 0.4
 local STEAL_DURATION = 0.9
 local AUTO_GRAB_DISTANCE = 41
+local WAYPOINT_REACH_DIST = 3
+local FINAL_WAYPOINT_REACH_DIST = 1
 
 local IsRunning = false
 local IsDodging = false
@@ -795,7 +797,7 @@ local function ForceStop()
     ProgressPercent.Text = "0%"
 end
 
-local function StartTweenToBase(keepMomentum)
+local function StartTweenToBase()
     local myBase = GetMyAnimalTarget()
     if not myBase then
         ForceStop()
@@ -937,7 +939,7 @@ local function StartTween()
             
             if StealFinished and not HasTransitionedToBase then
                 if GetTweenToBase() then
-                    StartTweenToBase(true)
+                    StartTweenToBase()
                     return
                 else
                     ForceStop()
@@ -959,7 +961,6 @@ local function StartTween()
                     ForceStop()
                     PhaseLabel.Text = "Arrived!"
                     PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-                    return
                 end
                 return
             end
@@ -969,8 +970,19 @@ local function StartTween()
             local flatDiff = Vector3.new(diff.X, 0, diff.Z)
             local distance = flatDiff.Magnitude
             
-            if distance < 3 then
+            local isLastWaypoint = CurrentWaypointIndex == #AllWaypoints
+            local reachDist = isLastWaypoint and FINAL_WAYPOINT_REACH_DIST or WAYPOINT_REACH_DIST
+            
+            if distance < reachDist then
                 CurrentWaypointIndex = CurrentWaypointIndex + 1
+                if isLastWaypoint then
+                    if StealFinished and not HasTransitionedToBase then
+                        if GetTweenToBase() then
+                            StartTweenToBase()
+                            return
+                        end
+                    end
+                end
                 return
             end
             
