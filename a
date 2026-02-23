@@ -16,7 +16,7 @@ local AnimalsShared = require(Shared:WaitForChild("Animals"))
 local NumberUtils = require(Utils:WaitForChild("NumberUtils"))
 
 local TweenToSpeed = 57
-local WalkSpeed = 29
+local WalkSpeed = 29.5
 local WalkSpeedSlow = 28
 local SlowSpeedDuration = 0.4
 local StandStillDuration = -1
