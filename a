@@ -27,7 +27,7 @@ local DodgeCooldown = 0.25
 local DodgeStartDelay = 0.6
 local DodgePredictionTime = 0.4
 local STEAL_DURATION = 0.9
-local AUTO_GRAB_DISTANCE = 32
+local AUTO_GRAB_DISTANCE = 41
 local WAYPOINT_REACH_DIST = 3
 local FINAL_WAYPOINT_REACH_DIST = 0.5
 
@@ -60,22 +60,22 @@ local TotalPathDistance = 0
 local HasTransitionedToBase = false
 local ReachedFinalWaypoint = false
 
+-- Path zum Brainrot (NUR erste Waypoints, KEINE End-Koordinate!)
 local BrainrotPath1 = {
     Vector3.new(-475.88, -7.30, 96.34),
-    Vector3.new(-485.90, -4.84, 96.45),
 }
 
 local BrainrotPath2 = {
     Vector3.new(-476.17, -6.82, 24.40),
-    Vector3.new(-485.91, -4.90, 25.01),
 }
 
+-- FINALE KOORDINATEN - genau beim Brainrot (NEUE!)
 local FinalPath1 = {
-    Vector3.new(-490.74, -5.09, 96.17)
+    Vector3.new(-484.85, -5.34, 99.22)
 }
 
 local FinalPath2 = {
-    Vector3.new(-490.32, -5.15, 25.54)
+    Vector3.new(-484.75, -5.40, 20.53)
 }
 
 local BasePath1 = {
@@ -351,8 +351,9 @@ end
 
 local function ChooseBrainrotPath(brainrotPos)
     if not brainrotPos then return BrainrotPath1, FinalPath1 end
-    local dist1 = (BrainrotPath1[#BrainrotPath1] - brainrotPos).Magnitude
-    local dist2 = (BrainrotPath2[#BrainrotPath2] - brainrotPos).Magnitude
+    -- Check welcher FinalPath näher am Brainrot ist
+    local dist1 = (FinalPath1[#FinalPath1] - brainrotPos).Magnitude
+    local dist2 = (FinalPath2[#FinalPath2] - brainrotPos).Magnitude
     if dist1 < dist2 then
         return BrainrotPath1, FinalPath1
     else
@@ -780,6 +781,9 @@ local function ResetGrabAndRecalculate()
 end
 
 local function ForceStop()
+    -- Sag Schmeckt PvP dass wir gestoppt haben!
+    getgenv().TweenPanelRunning = false
+    
     IsRunning = false
     IsDodging = false
     cancelCurrentSteal()
@@ -861,18 +865,29 @@ end
 
 local function StartTween()
     if IsRunning then return end
+    
+    -- WICHTIG: Sag Schmeckt PvP dass wir laufen!
+    getgenv().TweenPanelRunning = true
+    
     local tb = GetTweenToBrainrot()
     local tbase = GetTweenToBase()
     if not tb and not tbase then
         PhaseLabel.Text = "Nothing selected!"
         PhaseLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        getgenv().TweenPanelRunning = false
         return
     end
     local character = LocalPlayer.Character
-    if not character then return end
+    if not character then 
+        getgenv().TweenPanelRunning = false
+        return 
+    end
     local hrp = character:FindFirstChild("HumanoidRootPart")
     local humanoid = character:FindFirstChild("Humanoid")
-    if not hrp or not humanoid then return end
+    if not hrp or not humanoid then 
+        getgenv().TweenPanelRunning = false
+        return 
+    end
     LastHealth = humanoid.Health
     IsRunning = true
     IsDodging = false
@@ -906,10 +921,12 @@ local function StartTween()
         local path, finalPath = ChooseBrainrotPath(brainrotPos)
         AllWaypoints = {}
         
+        -- Füge normale Waypoints hinzu
         for _, wp in ipairs(path) do
             table.insert(AllWaypoints, wp)
         end
         
+        -- Füge FINALE Waypoints hinzu (die genauen Koordinaten)
         for _, wp in ipairs(finalPath) do
             table.insert(AllWaypoints, wp)
         end
