@@ -60,22 +60,22 @@ local TotalPathDistance = 0
 local HasTransitionedToBase = false
 local ReachedFinalWaypoint = false
 
--- Path zum Brainrot (NUR erste Waypoints, KEINE End-Koordinate!)
+-- PATH 1: Look Direction bei Start
+local LookDirection1 = Vector3.new(-0.03, 0.00, -1.00)
 local BrainrotPath1 = {
-    Vector3.new(-475.88, -7.30, 96.34),
+    Vector3.new(-476.67, -6.62, 92.66),
 }
-
-local BrainrotPath2 = {
-    Vector3.new(-476.17, -6.82, 24.40),
-}
-
--- FINALE KOORDINATEN - genau beim Brainrot (NEUE!)
 local FinalPath1 = {
-    Vector3.new(-484.85, -5.34, 99.22)
+    Vector3.new(-483.26, -5.34, 94.71)
 }
 
+-- PATH 2: Look Direction bei Start
+local LookDirection2 = Vector3.new(-0.01, -0.00, 1.00)
+local BrainrotPath2 = {
+    Vector3.new(-476.13, -6.84, 25.61),
+}
 local FinalPath2 = {
-    Vector3.new(-484.75, -5.40, 20.53)
+    Vector3.new(-483.07, -5.40, 23.01)
 }
 
 local BasePath1 = {
@@ -94,6 +94,13 @@ local function getHRP()
     local char = LocalPlayer.Character
     if not char then return nil end
     return char:FindFirstChild("HumanoidRootPart")
+end
+
+local function SetLookDirection(hrp, lookVector)
+    if not hrp or not lookVector then return end
+    local pos = hrp.Position
+    local targetPos = pos + lookVector * 10
+    hrp.CFrame = CFrame.new(pos, Vector3.new(targetPos.X, pos.Y, targetPos.Z))
 end
 
 local function isMyBase(plotName)
@@ -349,14 +356,20 @@ local function GetMyAnimalTarget()
     return nil
 end
 
+local ChosenLookDirection = nil
+
 local function ChooseBrainrotPath(brainrotPos)
-    if not brainrotPos then return BrainrotPath1, FinalPath1 end
-    -- Check welcher FinalPath näher am Brainrot ist
+    if not brainrotPos then 
+        ChosenLookDirection = LookDirection1
+        return BrainrotPath1, FinalPath1 
+    end
     local dist1 = (FinalPath1[#FinalPath1] - brainrotPos).Magnitude
     local dist2 = (FinalPath2[#FinalPath2] - brainrotPos).Magnitude
     if dist1 < dist2 then
+        ChosenLookDirection = LookDirection1
         return BrainrotPath1, FinalPath1
     else
+        ChosenLookDirection = LookDirection2
         return BrainrotPath2, FinalPath2
     end
 end
@@ -781,7 +794,6 @@ local function ResetGrabAndRecalculate()
 end
 
 local function ForceStop()
-    -- Sag Schmeckt PvP dass wir gestoppt haben!
     getgenv().TweenPanelRunning = false
     
     IsRunning = false
@@ -797,6 +809,7 @@ local function ForceStop()
     TotalPathDistance = 0
     HasTransitionedToBase = false
     ReachedFinalWaypoint = false
+    ChosenLookDirection = nil
     if Connection then
         pcall(function() Connection:Disconnect() end)
         Connection = nil
@@ -866,7 +879,6 @@ end
 local function StartTween()
     if IsRunning then return end
     
-    -- WICHTIG: Sag Schmeckt PvP dass wir laufen!
     getgenv().TweenPanelRunning = true
     
     local tb = GetTweenToBrainrot()
@@ -900,6 +912,7 @@ local function StartTween()
     TotalPathDistance = 0
     HasTransitionedToBase = false
     ReachedFinalWaypoint = false
+    ChosenLookDirection = nil
     StartButton.Text = "RUNNING..."
     StartButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
     scanAllPlots()
@@ -921,14 +934,17 @@ local function StartTween()
         local path, finalPath = ChooseBrainrotPath(brainrotPos)
         AllWaypoints = {}
         
-        -- Füge normale Waypoints hinzu
         for _, wp in ipairs(path) do
             table.insert(AllWaypoints, wp)
         end
         
-        -- Füge FINALE Waypoints hinzu (die genauen Koordinaten)
         for _, wp in ipairs(finalPath) do
             table.insert(AllWaypoints, wp)
+        end
+        
+        -- SOFORT UMDREHEN WENN R GEDRÜCKT!
+        if ChosenLookDirection then
+            SetLookDirection(hrp, ChosenLookDirection)
         end
         
         local startPos = hrp.Position
@@ -983,11 +999,9 @@ local function StartTween()
                 return
             end
             
-            -- WICHTIG: Erst alle Waypoints ablaufen, DANN zur Base!
             if CurrentWaypointIndex > #AllWaypoints then
                 ReachedFinalWaypoint = true
                 
-                -- Jetzt erst prüfen ob wir zur Base gehen
                 if StealFinished and not HasTransitionedToBase then
                     if GetTweenToBase() then
                         StartTweenToBase()
@@ -1000,7 +1014,6 @@ local function StartTween()
                     end
                 end
                 
-                -- Warten auf Steal wenn noch nicht fertig
                 if not StealFinished then
                     PhaseLabel.Text = "At Brainrot - Waiting..."
                     PhaseLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
