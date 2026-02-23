@@ -83,8 +83,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = game.CoreGui
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 220, 0, 195)
-MainFrame.Position = UDim2.new(0.5, -110, 0.5, -98)
+MainFrame.Size = UDim2.new(0, 220, 0, 223)
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -112)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -165,15 +165,16 @@ Separator1.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 local GetTweenToBrainrot, SetTweenToBrainrot = CreateToggle(MainFrame, "Tween to Brainrot", 38, true)
 local GetTweenToBase, SetTweenToBase = CreateToggle(MainFrame, "Tween to Base", 66, true)
 local GetSmartDodge, SetSmartDodge = CreateToggle(MainFrame, "Smart Dodge", 94, true)
+local GetInstantGrab, SetInstantGrab = CreateToggle(MainFrame, "Instant Grab", 122, true)
 
 local Separator2 = Instance.new("Frame", MainFrame)
 Separator2.Size = UDim2.new(1, -20, 0, 1)
-Separator2.Position = UDim2.new(0, 10, 0, 124)
+Separator2.Position = UDim2.new(0, 10, 0, 152)
 Separator2.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
 local PhaseLabel = Instance.new("TextLabel")
 PhaseLabel.Size = UDim2.new(1, -20, 0, 18)
-PhaseLabel.Position = UDim2.new(0, 10, 0, 130)
+PhaseLabel.Position = UDim2.new(0, 10, 0, 158)
 PhaseLabel.BackgroundTransparency = 1
 PhaseLabel.Text = "Idle [R to Start]"
 PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -184,7 +185,7 @@ PhaseLabel.Parent = MainFrame
 
 local StartButton = Instance.new("TextButton")
 StartButton.Size = UDim2.new(0.48, 0, 0, 35)
-StartButton.Position = UDim2.new(0, 10, 0, 155)
+StartButton.Position = UDim2.new(0, 10, 0, 183)
 StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 StartButton.Text = "START [R]"
 StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -195,7 +196,7 @@ Instance.new("UICorner", StartButton).CornerRadius = UDim.new(0, 8)
 
 local StopButton = Instance.new("TextButton")
 StopButton.Size = UDim2.new(0.48, 0, 0, 35)
-StopButton.Position = UDim2.new(0.52, 0, 0, 155)
+StopButton.Position = UDim2.new(0.52, 0, 0, 183)
 StopButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 StopButton.Text = "STOP"
 StopButton.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -376,6 +377,12 @@ local function IsRagdolledOrHit(humanoid, hrp)
 	return false, nil
 end
 
+local function ActivateAutoGrab()
+	if getgenv().SchmecktSetAutoGrab then
+		getgenv().SchmecktSetAutoGrab(true)
+	end
+end
+
 local function ForceStop()
 	IsRunning = false
 	IsDodging = false
@@ -516,6 +523,17 @@ local function StartTween()
 				PhaseLabel.Text = "At Brainrot, waiting..."
 				PhaseLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
 				hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+				
+				-- INSTANT GRAB: 0.2s WARTEN DANN AUTO GRAB AKTIVIEREN
+				if GetInstantGrab() then
+					task.spawn(function()
+						task.wait(0.2)
+						if CurrentPhase == "AtBrainrot" and IsRunning then
+							ActivateAutoGrab()
+						end
+					end)
+				end
+				
 				return
 			end
 			
