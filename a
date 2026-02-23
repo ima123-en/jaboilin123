@@ -27,9 +27,9 @@ local DodgeCooldown = 0.25
 local DodgeStartDelay = 0.6
 local DodgePredictionTime = 0.4
 local STEAL_DURATION = 0.9
-local AUTO_GRAB_DISTANCE = 41
+local AUTO_GRAB_DISTANCE = 32
 local WAYPOINT_REACH_DIST = 3
-local FINAL_WAYPOINT_REACH_DIST = 1
+local FINAL_WAYPOINT_REACH_DIST = 0.5
 
 local IsRunning = false
 local IsDodging = false
@@ -58,6 +58,7 @@ local lastAnimalData = {}
 local TargetAnimalData = nil
 local TotalPathDistance = 0
 local HasTransitionedToBase = false
+local ReachedFinalWaypoint = false
 
 local BrainrotPath1 = {
     Vector3.new(-475.88, -7.30, 96.34),
@@ -67,6 +68,14 @@ local BrainrotPath1 = {
 local BrainrotPath2 = {
     Vector3.new(-476.17, -6.82, 24.40),
     Vector3.new(-485.91, -4.90, 25.01),
+}
+
+local FinalPath1 = {
+    Vector3.new(-490.74, -5.09, 96.17)
+}
+
+local FinalPath2 = {
+    Vector3.new(-490.32, -5.15, 25.54)
 }
 
 local BasePath1 = {
@@ -341,10 +350,14 @@ local function GetMyAnimalTarget()
 end
 
 local function ChooseBrainrotPath(brainrotPos)
-    if not brainrotPos then return BrainrotPath1 end
+    if not brainrotPos then return BrainrotPath1, FinalPath1 end
     local dist1 = (BrainrotPath1[#BrainrotPath1] - brainrotPos).Magnitude
     local dist2 = (BrainrotPath2[#BrainrotPath2] - brainrotPos).Magnitude
-    return dist1 < dist2 and BrainrotPath1 or BrainrotPath2
+    if dist1 < dist2 then
+        return BrainrotPath1, FinalPath1
+    else
+        return BrainrotPath2, FinalPath2
+    end
 end
 
 local function ChooseBasePath(basePos)
@@ -759,6 +772,7 @@ local function ResetGrabAndRecalculate()
     StealStarted = false
     StealFinished = false
     HasTransitionedToBase = false
+    ReachedFinalWaypoint = false
     ProgressBarFill.Size = UDim2.new(0, 0, 1, 0)
     ProgressPercent.Text = "0%"
     PhaseLabel.Text = "HIT! Retrying..."
@@ -778,6 +792,7 @@ local function ForceStop()
     TargetAnimalData = nil
     TotalPathDistance = 0
     HasTransitionedToBase = false
+    ReachedFinalWaypoint = false
     if Connection then
         pcall(function() Connection:Disconnect() end)
         Connection = nil
@@ -869,6 +884,7 @@ local function StartTween()
     TargetAnimalData = nil
     TotalPathDistance = 0
     HasTransitionedToBase = false
+    ReachedFinalWaypoint = false
     StartButton.Text = "RUNNING..."
     StartButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
     scanAllPlots()
@@ -886,12 +902,18 @@ local function StartTween()
         if prompt then
             buildStealCallbacks(prompt)
         end
-        local path = ChooseBrainrotPath(brainrotPos)
+        
+        local path, finalPath = ChooseBrainrotPath(brainrotPos)
         AllWaypoints = {}
+        
         for _, wp in ipairs(path) do
             table.insert(AllWaypoints, wp)
         end
-        table.insert(AllWaypoints, brainrotPos)
+        
+        for _, wp in ipairs(finalPath) do
+            table.insert(AllWaypoints, wp)
+        end
+        
         local startPos = hrp.Position
         for i, wp in ipairs(AllWaypoints) do
             local diff = wp - startPos
@@ -937,18 +959,6 @@ local function StartTween()
         if CurrentPhase == "ToBrainrot" then
             TryAutoGrab(hrp)
             
-            if StealFinished and not HasTransitionedToBase then
-                if GetTweenToBase() then
-                    StartTweenToBase()
-                    return
-                else
-                    ForceStop()
-                    PhaseLabel.Text = "Grabbed!"
-                    PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-                    return
-                end
-            end
-            
             if isRagdolled then
                 hrp.AssemblyLinearVelocity = Vector3.new(0, math.min(hrp.AssemblyLinearVelocity.Y, 0), 0)
                 PhaseLabel.Text = "Ragdolled - Waiting..."
@@ -956,11 +966,27 @@ local function StartTween()
                 return
             end
             
+            -- WICHTIG: Erst alle Waypoints ablaufen, DANN zur Base!
             if CurrentWaypointIndex > #AllWaypoints then
-                if not GetTweenToBase() then
-                    ForceStop()
-                    PhaseLabel.Text = "Arrived!"
-                    PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+                ReachedFinalWaypoint = true
+                
+                -- Jetzt erst prüfen ob wir zur Base gehen
+                if StealFinished and not HasTransitionedToBase then
+                    if GetTweenToBase() then
+                        StartTweenToBase()
+                        return
+                    else
+                        ForceStop()
+                        PhaseLabel.Text = "Grabbed!"
+                        PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+                        return
+                    end
+                end
+                
+                -- Warten auf Steal wenn noch nicht fertig
+                if not StealFinished then
+                    PhaseLabel.Text = "At Brainrot - Waiting..."
+                    PhaseLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
                 end
                 return
             end
@@ -975,14 +1001,6 @@ local function StartTween()
             
             if distance < reachDist then
                 CurrentWaypointIndex = CurrentWaypointIndex + 1
-                if isLastWaypoint then
-                    if StealFinished and not HasTransitionedToBase then
-                        if GetTweenToBase() then
-                            StartTweenToBase()
-                            return
-                        end
-                    end
-                end
                 return
             end
             
