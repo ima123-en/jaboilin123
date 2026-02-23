@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
 local TweenToSpeed = 57.5
-local WalkSpeed = 30
+local WalkSpeed = 29
 local WalkSpeedSlow = 28
 local SlowSpeedDuration = 0.2
 local StandStillDuration = 0.15
