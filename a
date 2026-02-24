@@ -15,26 +15,23 @@ local AnimalsData = require(Datas:WaitForChild("Animals"))
 local AnimalsShared = require(Shared:WaitForChild("Animals"))
 local NumberUtils = require(Utils:WaitForChild("NumberUtils"))
 
--- VELOCITY BOOST CONFIG
-local TweenToSpeed = 60.5
-local TweenToSpeedFinal = 59
-local VELOCITY_LERP_ALPHA = 0.5 -- Smooth interpolation factor
-local SLOWDOWN_DISTANCE = 5
-local WalkSpeed = 29.5
-local WalkSpeedSlow = 28.5
+local TweenToSpeed = 60
+local VELOCITY_LERP_ALPHA = 1.0
+local WalkSpeed = 29
+local WalkSpeedSlow = 28
 local SlowSpeedDuration = 0.4
 local StandStillDuration = -1
 local DodgeSpeed = 29
 local DodgeRadius = 28
 local DodgeDuration = 0.22
-local DodgeCooldown = 0.6
+local DodgeCooldown = 0.8
 local DodgeStartDelay = 0.6
 local DodgePredictionTime = 0.4
 local STEAL_DURATION = 0.9
-local AUTO_GRAB_DISTANCE = 42
-local WAYPOINT_REACH_DIST = 5
-local FINAL_WAYPOINT_REACH_DIST = 3
-local GRAB_TIMING_OFFSET = 0.15
+local AUTO_GRAB_DISTANCE = 41
+local WAYPOINT_REACH_DIST = 3
+local FINAL_WAYPOINT_REACH_DIST = 0.5
+local PROGRESS_CAP = 0.90
 
 local IsRunning = false
 local IsDodging = false
@@ -65,45 +62,40 @@ local TotalPathDistance = 0
 local HasTransitionedToBase = false
 local ReachedFinalWaypoint = false
 
-local GrabScheduled = false
-local GrabScheduleTime = 0
-local MovingToBaseWhileGrabbing = false
-
 local CycleStartTime = 0
 local LastCycleTime = 0
 local BestCycleTime = math.huge
 
-local LookDirection1 = Vector3.new(0.02, -0.00, -1.00)
 local BrainrotPath1 = {
-    Vector3.new(-476.20, -6.86, 93.72),
-}
-local FinalPath1 = {
-    Vector3.new(-482.50, -5.34, 94.71)
+    Vector3.new(-475.88, -7.30, 96.34),
+    Vector3.new(-485.90, -4.84, 96.45),
 }
 
-local LookDirection2 = Vector3.new(-0.02, 0.00, 1.00)
 local BrainrotPath2 = {
-    Vector3.new(-476.58, -6.63, 25.34),
+    Vector3.new(-476.17, -6.82, 24.40),
+    Vector3.new(-485.91, -4.90, 25.01),
 }
+
+local FinalPath1 = {
+    Vector3.new(-485.51, -5.09, 95.76)
+}
+
 local FinalPath2 = {
-    Vector3.new(-482.30, -5.40, 23.01)
+    Vector3.new(-485.31, -5.15, 25.63)
 }
 
 local BasePath1 = {
     Vector3.new(-484.70, -8.24, 96.42),
-    Vector3.new(-473.36, -10.30, 97.25),
+    Vector3.new(-473.76, -7.30, 93.13),
     Vector3.new(-471.63, -9.90, 9.36),
 }
 
 local BasePath2 = {
     Vector3.new(-484.27, -8.40, 21.12),
-    Vector3.new(-473.06, -10.30, 21.38),
+    Vector3.new(-473.65, -7.20, 26.38),
     Vector3.new(-471.08, -9.84, 117.21),
 }
 
-local ChosenLookDirection = nil
-
--- CFRAME VELOCITY SMOOTH FUNCTION
 local function ApplySmoothVelocity(hrp, moveDir, targetSpeed)
     local currentVel = hrp.AssemblyLinearVelocity
     local targetVel = Vector3.new(moveDir.X * targetSpeed, currentVel.Y, moveDir.Z * targetSpeed)
@@ -115,13 +107,6 @@ local function getHRP()
     local char = LocalPlayer.Character
     if not char then return nil end
     return char:FindFirstChild("HumanoidRootPart")
-end
-
-local function SetLookDirection(hrp, lookVector)
-    if not hrp or not lookVector then return end
-    local pos = hrp.Position
-    local targetPos = pos + lookVector * 10
-    hrp.CFrame = CFrame.new(pos, Vector3.new(targetPos.X, pos.Y, targetPos.Z))
 end
 
 local function isMyBase(plotName)
@@ -309,9 +294,6 @@ local function cancelCurrentSteal()
     StealStartTime = 0
     StealFinishTime = 0
     CurrentStealPrompt = nil
-    GrabScheduled = false
-    GrabScheduleTime = 0
-    MovingToBaseWhileGrabbing = false
 end
 
 local function executeInstantSteal(prompt)
@@ -335,6 +317,7 @@ end
 
 local function finishSteal()
     if not CurrentStealPrompt then return end
+    if StealFinished then return end
     local data = InternalStealCache[CurrentStealPrompt]
     if not data then return end
     if #data.triggerCallbacks > 0 then
@@ -370,6 +353,19 @@ local function getDistanceToTarget(hrp)
     return Vector3.new(diff.X, 0, diff.Z).Magnitude
 end
 
+local function getDistanceToPrompt(hrp)
+    if not TargetAnimalData then return math.huge end
+    local prompt = findProximityPromptForAnimal(TargetAnimalData)
+    if not prompt or not prompt.Parent then return math.huge end
+    local attachment = prompt.Parent
+    if not attachment or not attachment:IsA("Attachment") then return math.huge end
+    local part = attachment.Parent
+    if not part or not part:IsA("BasePart") then return math.huge end
+    local promptWorldPos = part.CFrame:PointToWorldSpace(attachment.Position)
+    local diff = promptWorldPos - hrp.Position
+    return diff.Magnitude
+end
+
 local function GetMyAnimalTarget()
     local myPlot = GetMyPlot()
     if not myPlot then return nil end
@@ -381,17 +377,12 @@ local function GetMyAnimalTarget()
 end
 
 local function ChooseBrainrotPath(brainrotPos)
-    if not brainrotPos then 
-        ChosenLookDirection = LookDirection1
-        return BrainrotPath1, FinalPath1 
-    end
-    local dist1 = (FinalPath1[#FinalPath1] - brainrotPos).Magnitude
-    local dist2 = (FinalPath2[#FinalPath2] - brainrotPos).Magnitude
+    if not brainrotPos then return BrainrotPath1, FinalPath1 end
+    local dist1 = (BrainrotPath1[#BrainrotPath1] - brainrotPos).Magnitude
+    local dist2 = (BrainrotPath2[#BrainrotPath2] - brainrotPos).Magnitude
     if dist1 < dist2 then
-        ChosenLookDirection = LookDirection1
         return BrainrotPath1, FinalPath1
     else
-        ChosenLookDirection = LookDirection2
         return BrainrotPath2, FinalPath2
     end
 end
@@ -493,8 +484,8 @@ end
 
 local function IsRagdolled(humanoid)
     local state = humanoid:GetState()
-    return state == Enum.HumanoidStateType.Ragdoll 
-        or state == Enum.HumanoidStateType.Physics 
+    return state == Enum.HumanoidStateType.Ragdoll
+        or state == Enum.HumanoidStateType.Physics
         or state == Enum.HumanoidStateType.FallingDown
 end
 
@@ -522,8 +513,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = game.CoreGui
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 220, 0, 420)
-MainFrame.Position = UDim2.new(0.5, -110, 0.5, -210)
+MainFrame.Size = UDim2.new(0, 220, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -180)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -596,7 +587,7 @@ local function CreateToggle(parent, text, yPos, defaultState)
     return function() return toggled end, function(state) toggled = state updateVisual() end
 end
 
-local function CreateSlider(parent, text, yPos, minVal, maxVal, defaultVal, suffix, onChangeCallback)
+local function CreateSlider(parent, text, yPos, minVal, maxVal, defaultVal, suffix)
     local Container = Instance.new("Frame", parent)
     Container.Size = UDim2.new(1, -20, 0, 45)
     Container.Position = UDim2.new(0, 10, 0, yPos)
@@ -643,9 +634,6 @@ local function CreateSlider(parent, text, yPos, minVal, maxVal, defaultVal, suff
         SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
         Knob.Position = UDim2.new(relativeX, -8, 0.5, -8)
         ValueLabel.Text = tostring(currentValue) .. (suffix or "")
-        if onChangeCallback then
-            onChangeCallback(currentValue)
-        end
     end
     SliderBg.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -668,7 +656,7 @@ local function CreateSlider(parent, text, yPos, minVal, maxVal, defaultVal, suff
             dragging = false
         end
     end)
-    return function() return currentValue end, function(val) 
+    return function() return currentValue end, function(val)
         currentValue = math.clamp(val, minVal, maxVal)
         local relativeX = (currentValue - minVal) / (maxVal - minVal)
         SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
@@ -694,25 +682,14 @@ Separator3.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
 local GetGrabDistance, SetGrabDistance = CreateSlider(MainFrame, "Auto Grab Distance", 158, 5, 200, AUTO_GRAB_DISTANCE, " studs")
 
--- BOOST SPEED SLIDER
-local GetBoostSpeed, SetBoostSpeed = CreateSlider(MainFrame, "Boost Speed", 205, 50, 80, TweenToSpeed, " vel", function(val)
-    TweenToSpeed = val
-    TweenToSpeedFinal = val - 2
-end)
-
--- SMOOTH FACTOR SLIDER
-local GetSmoothFactor, SetSmoothFactor = CreateSlider(MainFrame, "Smooth Factor", 252, 10, 100, VELOCITY_LERP_ALPHA * 100, "%", function(val)
-    VELOCITY_LERP_ALPHA = val / 100
-end)
-
 local Separator2 = Instance.new("Frame", MainFrame)
 Separator2.Size = UDim2.new(1, -20, 0, 1)
-Separator2.Position = UDim2.new(0, 10, 0, 302)
+Separator2.Position = UDim2.new(0, 10, 0, 208)
 Separator2.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
 local ProgressLabel = Instance.new("TextLabel")
 ProgressLabel.Size = UDim2.new(1, -20, 0, 14)
-ProgressLabel.Position = UDim2.new(0, 10, 0, 307)
+ProgressLabel.Position = UDim2.new(0, 10, 0, 212)
 ProgressLabel.BackgroundTransparency = 1
 ProgressLabel.Text = "GRAB PROGRESS"
 ProgressLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -723,7 +700,7 @@ ProgressLabel.Parent = MainFrame
 
 local ProgressBarBg = Instance.new("Frame")
 ProgressBarBg.Size = UDim2.new(1, -20, 0, 12)
-ProgressBarBg.Position = UDim2.new(0, 10, 0, 322)
+ProgressBarBg.Position = UDim2.new(0, 10, 0, 228)
 ProgressBarBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 ProgressBarBg.BorderSizePixel = 0
 ProgressBarBg.Parent = MainFrame
@@ -746,7 +723,7 @@ FillGradient.Parent = ProgressBarFill
 
 local ProgressPercent = Instance.new("TextLabel")
 ProgressPercent.Size = UDim2.new(0, 40, 0, 12)
-ProgressPercent.Position = UDim2.new(1, -50, 0, 307)
+ProgressPercent.Position = UDim2.new(1, -50, 0, 212)
 ProgressPercent.BackgroundTransparency = 1
 ProgressPercent.Text = "0%"
 ProgressPercent.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -757,7 +734,7 @@ ProgressPercent.Parent = MainFrame
 
 local PhaseLabel = Instance.new("TextLabel")
 PhaseLabel.Size = UDim2.new(1, -20, 0, 18)
-PhaseLabel.Position = UDim2.new(0, 10, 0, 338)
+PhaseLabel.Position = UDim2.new(0, 10, 0, 246)
 PhaseLabel.BackgroundTransparency = 1
 PhaseLabel.Text = "Idle [R to Start]"
 PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -766,20 +743,20 @@ PhaseLabel.TextSize = 13
 PhaseLabel.TextXAlignment = Enum.TextXAlignment.Center
 PhaseLabel.Parent = MainFrame
 
-local SpeedDisplayLabel = Instance.new("TextLabel")
-SpeedDisplayLabel.Size = UDim2.new(1, -20, 0, 14)
-SpeedDisplayLabel.Position = UDim2.new(0, 10, 0, 356)
-SpeedDisplayLabel.BackgroundTransparency = 1
-SpeedDisplayLabel.Text = "Speed: 0.0"
-SpeedDisplayLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
-SpeedDisplayLabel.Font = Enum.Font.GothamBold
-SpeedDisplayLabel.TextSize = 10
-SpeedDisplayLabel.TextXAlignment = Enum.TextXAlignment.Center
-SpeedDisplayLabel.Parent = MainFrame
+local DebugLabel = Instance.new("TextLabel")
+DebugLabel.Size = UDim2.new(1, -20, 0, 14)
+DebugLabel.Position = UDim2.new(0, 10, 0, 264)
+DebugLabel.BackgroundTransparency = 1
+DebugLabel.Text = ""
+DebugLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+DebugLabel.Font = Enum.Font.Gotham
+DebugLabel.TextSize = 9
+DebugLabel.TextXAlignment = Enum.TextXAlignment.Center
+DebugLabel.Parent = MainFrame
 
 local StartButton = Instance.new("TextButton")
-StartButton.Size = UDim2.new(0.48, 0, 0, 30)
-StartButton.Position = UDim2.new(0, 10, 0, 373)
+StartButton.Size = UDim2.new(0.48, 0, 0, 35)
+StartButton.Position = UDim2.new(0, 10, 0, 282)
 StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 StartButton.Text = "START [R]"
 StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -789,8 +766,8 @@ StartButton.Parent = MainFrame
 Instance.new("UICorner", StartButton).CornerRadius = UDim.new(0, 8)
 
 local StopButton = Instance.new("TextButton")
-StopButton.Size = UDim2.new(0.48, 0, 0, 30)
-StopButton.Position = UDim2.new(0.52, 0, 0, 373)
+StopButton.Size = UDim2.new(0.48, 0, 0, 35)
+StopButton.Position = UDim2.new(0.52, 0, 0, 282)
 StopButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 StopButton.Text = "STOP"
 StopButton.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -800,8 +777,8 @@ StopButton.Parent = MainFrame
 Instance.new("UICorner", StopButton).CornerRadius = UDim.new(0, 8)
 
 local TimerFrame = Instance.new("Frame")
-TimerFrame.Size = UDim2.new(1, -20, 0, 25)
-TimerFrame.Position = UDim2.new(0, 10, 0, 405)
+TimerFrame.Size = UDim2.new(1, -20, 0, 28)
+TimerFrame.Position = UDim2.new(0, 10, 0, 322)
 TimerFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 TimerFrame.BorderSizePixel = 0
 TimerFrame.Parent = MainFrame
@@ -809,22 +786,24 @@ Instance.new("UICorner", TimerFrame).CornerRadius = UDim.new(0, 6)
 
 local CurrentTimeLabel = Instance.new("TextLabel")
 CurrentTimeLabel.Size = UDim2.new(0.5, 0, 1, 0)
-CurrentTimeLabel.Position = UDim2.new(0, 0, 0, 0)
+CurrentTimeLabel.Position = UDim2.new(0, 5, 0, 0)
 CurrentTimeLabel.BackgroundTransparency = 1
 CurrentTimeLabel.Text = "⏱ 0.00s"
 CurrentTimeLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
 CurrentTimeLabel.Font = Enum.Font.GothamBold
-CurrentTimeLabel.TextSize = 10
+CurrentTimeLabel.TextSize = 11
+CurrentTimeLabel.TextXAlignment = Enum.TextXAlignment.Left
 CurrentTimeLabel.Parent = TimerFrame
 
 local BestTimeLabel = Instance.new("TextLabel")
 BestTimeLabel.Size = UDim2.new(0.5, 0, 1, 0)
-BestTimeLabel.Position = UDim2.new(0.5, 0, 0, 0)
+BestTimeLabel.Position = UDim2.new(0.5, -5, 0, 0)
 BestTimeLabel.BackgroundTransparency = 1
 BestTimeLabel.Text = "🏆 --"
 BestTimeLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
 BestTimeLabel.Font = Enum.Font.GothamBold
-BestTimeLabel.TextSize = 10
+BestTimeLabel.TextSize = 11
+BestTimeLabel.TextXAlignment = Enum.TextXAlignment.Right
 BestTimeLabel.Parent = TimerFrame
 
 local function UpdateTimer()
@@ -834,31 +813,19 @@ local function UpdateTimer()
     end
 end
 
-local function UpdateSpeedDisplay(hrp)
-    if hrp then
-        local speed = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z).Magnitude
-        SpeedDisplayLabel.Text = string.format("Speed: %.1f (Smooth: %d%%)", speed, math.floor(VELOCITY_LERP_ALPHA * 100))
-        if speed >= TweenToSpeed * 0.95 then
-            SpeedDisplayLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-        elseif speed >= TweenToSpeed * 0.8 then
-            SpeedDisplayLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
-        else
-            SpeedDisplayLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
-        end
-    end
-end
-
 local function UpdateProgressBar()
-    if IsStealing then
-        StealProgress = math.clamp((tick() - StealStartTime) / STEAL_DURATION, 0, 1)
-        ProgressBarFill.Size = UDim2.new(StealProgress, 0, 1, 0)
-        ProgressPercent.Text = math.floor(StealProgress * 100) .. "%"
-        if StealProgress >= 1 and not StealFinished then
+    if IsStealing and not StealFinished then
+        local rawProgress = math.clamp((tick() - StealStartTime) / STEAL_DURATION, 0, 1)
+        StealProgress = rawProgress
+        local displayProgress = math.min(rawProgress, PROGRESS_CAP)
+        ProgressBarFill.Size = UDim2.new(displayProgress, 0, 1, 0)
+        ProgressPercent.Text = math.floor(displayProgress * 100) .. "%"
+        if rawProgress >= 1 and not StealFinished then
             finishSteal()
         end
     elseif StealFinished then
-        ProgressBarFill.Size = UDim2.new(1, 0, 1, 0)
-        ProgressPercent.Text = "100%"
+        ProgressBarFill.Size = UDim2.new(PROGRESS_CAP, 0, 1, 0)
+        ProgressPercent.Text = math.floor(PROGRESS_CAP * 100) .. "%"
     else
         ProgressBarFill.Size = UDim2.new(0, 0, 1, 0)
         ProgressPercent.Text = "0%"
@@ -872,8 +839,6 @@ local function ResetGrabAndRecalculate()
     StealFinished = false
     HasTransitionedToBase = false
     ReachedFinalWaypoint = false
-    MovingToBaseWhileGrabbing = false
-    GrabScheduled = false
     ProgressBarFill.Size = UDim2.new(0, 0, 1, 0)
     ProgressPercent.Text = "0%"
     PhaseLabel.Text = "HIT! Retrying..."
@@ -894,7 +859,6 @@ local function FinishCycle()
 end
 
 local function ForceStop()
-    getgenv().TweenPanelRunning = false
     IsRunning = false
     IsDodging = false
     cancelCurrentSteal()
@@ -908,9 +872,6 @@ local function ForceStop()
     TotalPathDistance = 0
     HasTransitionedToBase = false
     ReachedFinalWaypoint = false
-    ChosenLookDirection = nil
-    MovingToBaseWhileGrabbing = false
-    GrabScheduled = false
     CycleStartTime = 0
     if Connection then
         pcall(function() Connection:Disconnect() end)
@@ -927,24 +888,9 @@ local function ForceStop()
     StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
     PhaseLabel.Text = "Idle [R to Start]"
     PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    DebugLabel.Text = ""
     ProgressBarFill.Size = UDim2.new(0, 0, 1, 0)
     ProgressPercent.Text = "0%"
-    SpeedDisplayLabel.Text = "Speed: 0.0"
-end
-
-local function SetupBasePathAndStartMoving()
-    local myBase = GetMyAnimalTarget()
-    if not myBase then
-        return false
-    end
-    local path = ChooseBasePath(myBase)
-    AllWaypoints = {}
-    for _, wp in ipairs(path) do
-        table.insert(AllWaypoints, wp)
-    end
-    table.insert(AllWaypoints, myBase)
-    CurrentWaypointIndex = 1
-    return true
 end
 
 local function StartTweenToBase()
@@ -967,22 +913,24 @@ local function StartTweenToBase()
     GrabFinishedTime = tick()
     ToBaseStartTime = tick() + StandStillDuration
     HasTransitionedToBase = true
-    PhaseLabel.Text = "TO BASE!"
-    PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+    PhaseLabel.Text = "Going to Base!"
+    PhaseLabel.TextColor3 = Color3.fromRGB(180, 130, 255)
 end
 
 local function TryAutoGrab(hrp)
     if not GetInstantGrab() then return false end
     if StealStarted or IsStealing or not TargetAnimalData then return false end
     local distanceToTarget = getDistanceToTarget(hrp)
+    local promptDist = getDistanceToPrompt(hrp)
     local grabDistance = GetGrabDistance()
-    if distanceToTarget <= grabDistance then
+    if distanceToTarget <= grabDistance or promptDist <= grabDistance then
         local prompt = findProximityPromptForAnimal(TargetAnimalData)
         if prompt and prompt.Parent then
             StealStarted = true
             local success = executeInstantSteal(prompt)
             if success then
-                PhaseLabel.Text = string.format("GRAB @ %.0f!", distanceToTarget)
+                local usedDist = math.min(distanceToTarget, promptDist)
+                PhaseLabel.Text = string.format("GRAB @ %.0f studs!", usedDist)
                 PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
                 return true
             else
@@ -993,73 +941,22 @@ local function TryAutoGrab(hrp)
     return false
 end
 
-local function StartOptimizedGrabAndReturn(hrp)
-    if not GetInstantGrab() then return false end
-    if StealStarted or IsStealing or not TargetAnimalData then return false end
-    
-    if not SetupBasePathAndStartMoving() then
-        return false
-    end
-    
-    MovingToBaseWhileGrabbing = true
-    GrabScheduled = true
-    GrabScheduleTime = tick()
-    ToBaseStartTime = tick()
-    GrabFinishedTime = tick()
-    CurrentPhase = "GrabAndRun"
-    
-    PhaseLabel.Text = "GRAB & RUN!"
-    PhaseLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
-    
-    return true
-end
-
-local function ExecuteScheduledGrab()
-    if not GrabScheduled or StealStarted or IsStealing then return false end
-    if not TargetAnimalData then return false end
-    
-    local prompt = findProximityPromptForAnimal(TargetAnimalData)
-    if prompt and prompt.Parent then
-        StealStarted = true
-        GrabScheduled = false
-        local success = executeInstantSteal(prompt)
-        if success then
-            PhaseLabel.Text = "GRABBING!"
-            PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-            return true
-        else
-            StealStarted = false
-        end
-    end
-    return false
-end
-
 local function StartTween()
     if IsRunning then return end
-    getgenv().TweenPanelRunning = true
     CycleStartTime = tick()
     local tb = GetTweenToBrainrot()
     local tbase = GetTweenToBase()
     if not tb and not tbase then
         PhaseLabel.Text = "Nothing selected!"
         PhaseLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        getgenv().TweenPanelRunning = false
         CycleStartTime = 0
         return
     end
     local character = LocalPlayer.Character
-    if not character then 
-        getgenv().TweenPanelRunning = false
-        CycleStartTime = 0
-        return 
-    end
+    if not character then CycleStartTime = 0 return end
     local hrp = character:FindFirstChild("HumanoidRootPart")
     local humanoid = character:FindFirstChild("Humanoid")
-    if not hrp or not humanoid then 
-        getgenv().TweenPanelRunning = false
-        CycleStartTime = 0
-        return 
-    end
+    if not hrp or not humanoid then CycleStartTime = 0 return end
     LastHealth = humanoid.Health
     IsRunning = true
     IsDodging = false
@@ -1072,9 +969,6 @@ local function StartTween()
     TotalPathDistance = 0
     HasTransitionedToBase = false
     ReachedFinalWaypoint = false
-    ChosenLookDirection = nil
-    MovingToBaseWhileGrabbing = false
-    GrabScheduled = false
     StartButton.Text = "RUNNING..."
     StartButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
     scanAllPlots()
@@ -1101,10 +995,9 @@ local function StartTween()
         for _, wp in ipairs(finalPath) do
             table.insert(AllWaypoints, wp)
         end
-        if ChosenLookDirection then
-            SetLookDirection(hrp, ChosenLookDirection)
-        end
+        table.insert(AllWaypoints, brainrotPos)
         local startPos = hrp.Position
+        TotalPathDistance = 0
         for i, wp in ipairs(AllWaypoints) do
             local diff = wp - startPos
             TotalPathDistance = TotalPathDistance + Vector3.new(diff.X, 0, diff.Z).Magnitude
@@ -1114,6 +1007,7 @@ local function StartTween()
         CurrentPhase = "ToBrainrot"
         PhaseLabel.Text = "Going to Brainrot..."
         PhaseLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+        DebugLabel.Text = string.format("Path: %.0f studs | %d waypoints", TotalPathDistance, #AllWaypoints)
     elseif tbase then
         CurrentPhase = "WaitForSteal"
         PhaseLabel.Text = "Waiting for steal..."
@@ -1130,113 +1024,61 @@ local function StartTween()
         local now = tick()
         local isRagdolled = IsRagdolled(humanoid)
         UpdateProgressBar()
-        UpdateSpeedDisplay(hrp)
-        
-        if (CurrentPhase == "ToBrainrot" or CurrentPhase == "GrabAndRun") and IsStealing then
+        if CurrentPhase == "ToBrainrot" and IsStealing then
             if IsHit(humanoid, hrp) then
                 ResetGrabAndRecalculate()
                 return
             end
         end
-        
         if CurrentPhase == "WaitForSteal" then
             if isStealing and GetTweenToBase() then
                 StartTweenToBase()
             end
             return
         end
-        
-        if CurrentPhase == "GrabAndRun" then
-            if isRagdolled then
-                hrp.AssemblyLinearVelocity = Vector3.new(0, math.min(hrp.AssemblyLinearVelocity.Y, 0), 0)
-                PhaseLabel.Text = "Ragdolled - Waiting..."
-                PhaseLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
-                return
-            end
-            
-            if GrabScheduled and (now - GrabScheduleTime) >= GRAB_TIMING_OFFSET then
-                ExecuteScheduledGrab()
-            end
-            
-            if StealFinished then
-                CurrentPhase = "ToBase"
-                HasTransitionedToBase = true
-                PhaseLabel.Text = "TO BASE!"
-                PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-                return
-            end
-            
-            if CurrentWaypointIndex > #AllWaypoints then
-                hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
-                return
-            end
-            
-            local target = AllWaypoints[CurrentWaypointIndex]
-            local diff = target - hrp.Position
-            local flatDiff = Vector3.new(diff.X, 0, diff.Z)
-            local distance = flatDiff.Magnitude
-            
-            if distance < 4 then
-                CurrentWaypointIndex = CurrentWaypointIndex + 1
-                return
-            end
-            
-            local moveDir = flatDiff.Unit
-            local timeSinceStart = now - ToBaseStartTime
-            local finalSpeed = timeSinceStart < SlowSpeedDuration and WalkSpeedSlow or WalkSpeed
-            
-            -- CFrame Velocity Smooth für GrabAndRun
-            ApplySmoothVelocity(hrp, moveDir, finalSpeed)
-            
-            if IsStealing then
-                PhaseLabel.Text = "GRAB & RUN!"
-                PhaseLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
-            end
-            return
-        end
-        
         if CurrentPhase == "ToBrainrot" then
+            TryAutoGrab(hrp)
             if isRagdolled then
                 hrp.AssemblyLinearVelocity = Vector3.new(0, math.min(hrp.AssemblyLinearVelocity.Y, 0), 0)
                 PhaseLabel.Text = "Ragdolled - Waiting..."
                 PhaseLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
                 return
             end
-            
-            if StealFinished and not HasTransitionedToBase then
-                if GetTweenToBase() then
-                    StartTweenToBase()
-                    return
-                else
-                    FinishCycle()
-                    ForceStop()
-                    PhaseLabel.Text = "Done!"
-                    PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-                    return
-                end
-            end
-            
             if CurrentWaypointIndex > #AllWaypoints then
                 ReachedFinalWaypoint = true
-                
-                if not StealStarted and not IsStealing and GetTweenToBase() then
-                    if StartOptimizedGrabAndReturn(hrp) then
+                if StealFinished and not HasTransitionedToBase then
+                    if GetTweenToBase() then
+                        StartTweenToBase()
+                        return
+                    else
+                        FinishCycle()
+                        ForceStop()
+                        PhaseLabel.Text = "Grabbed!"
+                        PhaseLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
                         return
                     end
                 end
-                
-                if not StealStarted and not IsStealing then
+                if not StealFinished and not StealStarted then
                     local prompt = findProximityPromptForAnimal(TargetAnimalData)
                     if prompt and prompt.Parent then
                         StealStarted = true
-                        executeInstantSteal(prompt)
+                        local success = executeInstantSteal(prompt)
+                        if success then
+                            PhaseLabel.Text = "LATE GRAB!"
+                            PhaseLabel.TextColor3 = Color3.fromRGB(255, 150, 0)
+                        else
+                            StealStarted = false
+                            PhaseLabel.Text = "Grab failed - too far?"
+                            PhaseLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                        end
                     end
+                end
+                if not StealFinished then
+                    PhaseLabel.Text = "At Brainrot - Waiting..."
+                    PhaseLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
                 end
                 return
             end
-            
-            TryAutoGrab(hrp)
-            
             local target = AllWaypoints[CurrentWaypointIndex]
             local diff = target - hrp.Position
             local flatDiff = Vector3.new(diff.X, 0, diff.Z)
@@ -1247,21 +1089,14 @@ local function StartTween()
                 CurrentWaypointIndex = CurrentWaypointIndex + 1
                 return
             end
-            
             local moveDir = flatDiff.Unit
-            local distanceToBrainrot = getDistanceToTarget(hrp)
-            
-            -- Speed basierend auf Distanz zum Brainrot
-            local currentSpeed = TweenToSpeed
-            if distanceToBrainrot <= SLOWDOWN_DISTANCE then
-                currentSpeed = TweenToSpeedFinal
-            end
-            
-            -- CFRAME VELOCITY SMOOTH - Sanfte Interpolation
-            ApplySmoothVelocity(hrp, moveDir, currentSpeed)
+            ApplySmoothVelocity(hrp, moveDir, TweenToSpeed)
+            local distToAnimal = getDistanceToTarget(hrp)
+            local distToPrompt = getDistanceToPrompt(hrp)
+            DebugLabel.Text = string.format("WP:%d/%d | Ani:%.0f | Prm:%.0f",
+                CurrentWaypointIndex, #AllWaypoints, distToAnimal, distToPrompt)
             return
         end
-        
         if CurrentPhase == "ToBase" then
             if isRagdolled then
                 hrp.AssemblyLinearVelocity = Vector3.new(0, math.min(hrp.AssemblyLinearVelocity.Y, 0), 0)
@@ -1349,8 +1184,6 @@ local function StartTween()
                 PhaseLabel.Text = "Going to Base..."
                 PhaseLabel.TextColor3 = Color3.fromRGB(180, 130, 255)
             end
-            
-            -- CFrame Velocity Smooth für ToBase
             ApplySmoothVelocity(hrp, finalDir, finalSpeed)
         end
     end)
