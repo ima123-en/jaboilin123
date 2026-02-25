@@ -67,33 +67,31 @@ local LastCycleTime = 0
 local BestCycleTime = math.huge
 
 local BrainrotPath1 = {
-    Vector3.new(-475.88, -7.30, 96.34),
-    Vector3.new(-485.90, -4.84, 96.45),
+    Vector3.new(-476.48, -6.28, 92.73),
+    Vector3.new(-483.12, -4.95, 94.80),
 }
 
 local BrainrotPath2 = {
-    Vector3.new(-476.17, -6.82, 24.40),
-    Vector3.new(-485.91, -4.90, 25.01),
+    Vector3.new(-476.16, -6.52, 25.62),
+    Vector3.new(-483.04, -5.09, 23.14),
 }
 
 local FinalPath1 = {
-    Vector3.new(-485.51, -5.09, 95.76)
+    Vector3.new(-483.12, -4.95, 94.80)
 }
 
 local FinalPath2 = {
-    Vector3.new(-485.31, -5.15, 25.63)
+    Vector3.new(-483.04, -5.09, 23.14)
 }
 
 local BasePath1 = {
-    Vector3.new(-484.70, -8.24, 96.42),
-    Vector3.new(-473.76, -7.30, 93.13),
-    Vector3.new(-471.63, -9.90, 9.36),
+    Vector3.new(-474.480, -7.098, 95.407),
+    Vector3.new(-473.165, -7.098, 22.341),
 }
 
 local BasePath2 = {
-    Vector3.new(-484.27, -8.40, 21.12),
-    Vector3.new(-473.65, -7.20, 26.38),
-    Vector3.new(-471.08, -9.84, 117.21),
+    Vector3.new(-472.409, -7.098, 25.268),
+    Vector3.new(-472.676, -7.098, 98.162),
 }
 
 local function ApplySmoothVelocity(hrp, moveDir, targetSpeed)
@@ -873,6 +871,7 @@ local function ForceStop()
     HasTransitionedToBase = false
     ReachedFinalWaypoint = false
     CycleStartTime = 0
+    getgenv().TweenPanelRunning = false
     if Connection then
         pcall(function() Connection:Disconnect() end)
         Connection = nil
@@ -959,6 +958,7 @@ local function StartTween()
     if not hrp or not humanoid then CycleStartTime = 0 return end
     LastHealth = humanoid.Health
     IsRunning = true
+    getgenv().TweenPanelRunning = true
     IsDodging = false
     cancelCurrentSteal()
     CurrentDodgeDirection = nil
