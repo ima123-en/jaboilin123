@@ -15,10 +15,10 @@ local AnimalsData = require(Datas:WaitForChild("Animals"))
 local AnimalsShared = require(Shared:WaitForChild("Animals"))
 local NumberUtils = require(Utils:WaitForChild("NumberUtils"))
 
-local TweenToSpeed = 59
-local VELOCITY_LERP_ALPHA = 1.0
-local WalkSpeed = 29
-local WalkSpeedSlow = 28
+local TweenToSpeed = 58.1
+local VELOCITY_LERP_ALPHA = 0.2
+local WalkSpeed = 29.5
+local WalkSpeedSlow = 29
 local SlowSpeedDuration = 0.4
 local StandStillDuration = -1
 local DodgeSpeed = 29
