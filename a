@@ -16,7 +16,6 @@ local AnimalsData = require(Datas:WaitForChild("Animals"))
 local AnimalsShared = require(Shared:WaitForChild("Animals"))
 local NumberUtils = require(Utils:WaitForChild("NumberUtils"))
 
--- Speed Boost System Variables (from first script)
 local SpeedBoostEnabled = true
 local TargetSpeed = 61
 local LERP_ALPHA = 0.35
@@ -90,6 +89,8 @@ local SafeTPPoint = Vector3.new(-475.60, -7.30, 57.68)
 local NoCollisionActive = false
 local NoCollisionConnection = nil
 
+local IsDragging = false
+
 local BrainrotPath1 = {
     Vector3.new(-476.48, -6.28, 92.73),
     Vector3.new(-483.12, -4.95, 94.80),
@@ -118,7 +119,6 @@ local BasePath2 = {
     Vector3.new(-472.676, -7.098, 98.162),
 }
 
--- Speed Boost Functions (from first script)
 local function IsGrounded(hrp)
     local rayParams = RaycastParams.new()
     rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
@@ -242,7 +242,6 @@ local function SetVelocity(hrp, moveDir, speed)
     hrp.AssemblyLinearVelocity = currentVel:Lerp(targetVel, VELOCITY_LERP_ALPHA)
 end
 
--- New function that uses the advanced speed boost system
 local function SetVelocityWithSpeedBoost(hrp, moveDir)
     return ApplySpeedBoost(hrp, moveDir)
 end
@@ -758,12 +757,11 @@ local function ForceStop()
     ReachedFinalWaypoint = false
     CycleStartTime = 0
     JustTeleported = false
-    AllowTpAfterRagdoll = false
     ResetSpeedBoost()
     getgenv().TweenPanelRunning = false
     StopNoCollision(0)
     if Connection then
-        pcall(function() Connection:Disconnect() end)
+        Connection:Disconnect()
         Connection = nil
     end
     local character = LocalPlayer.Character
@@ -773,9 +771,6 @@ local function ForceStop()
             StopMovement(hrp)
         end
     end
-    task.delay(0.5, function()
-        AllowTpAfterRagdoll = true
-    end)
 end
 
 pcall(function()
@@ -795,10 +790,14 @@ MainFrame.Position = UDim2.new(0.5, -110, 0.5, -210)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
-MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(138, 43, 226)
+
+local DragBar = Instance.new("Frame")
+DragBar.Size = UDim2.new(1, 0, 0, 30)
+DragBar.BackgroundTransparency = 1
+DragBar.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
@@ -818,6 +817,29 @@ CloseButton.TextColor3 = Color3.fromRGB(255, 60, 60)
 CloseButton.Font = Enum.Font.GothamBold
 CloseButton.TextSize = 14
 CloseButton.Parent = MainFrame
+
+local dragStart = nil
+local startPos = nil
+
+DragBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        IsDragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                IsDragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if IsDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
 
 local function CreateToggle(parent, text, yPos, defaultState)
     local Container = Instance.new("Frame", parent)
@@ -1005,7 +1027,6 @@ BestTimeLabel.TextSize = 11
 BestTimeLabel.TextXAlignment = Enum.TextXAlignment.Right
 BestTimeLabel.Parent = TimerFrame
 
--- Speed Status Label (bottom right corner style)
 local SpeedStatusFrame = Instance.new("Frame")
 SpeedStatusFrame.Size = UDim2.new(1, -20, 0, 32)
 SpeedStatusFrame.Position = UDim2.new(0, 10, 0, 350)
@@ -1158,9 +1179,8 @@ local function TryAutoGrab(hrp)
     return false
 end
 
-function StartTween()
+local function StartTween()
     if IsRunning then return end
-    AllowTpAfterRagdoll = true
     CycleStartTime = tick()
     ResetSpeedBoost()
     local tb = GetTweenToBrainrot()
@@ -1318,11 +1338,8 @@ function StartTween()
                 return
             end
             local moveDir = flatDiff.Unit
-            
-            -- Use the new speed boost system
             local currentSpeed = SetVelocityWithSpeedBoost(hrp, moveDir)
             UpdateSpeedStatus(currentSpeed, CorrectionCount)
-            
             local distToAnimal = getDistanceToTarget(hrp)
             local distToPrompt = getDistanceToPrompt(hrp)
             DebugLabel.Text = string.format("WP:%d/%d | Ani:%.0f | Prm:%.0f", CurrentWaypointIndex, #AllWaypoints, distToAnimal, distToPrompt)
@@ -1502,27 +1519,32 @@ local function TeleportToPathAndRun()
     end
 end
 
+local function ToggleScript()
+    if IsRunning then
+        ForceStopFull()
+    else
+        StartTween()
+    end
+end
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
+    if IsDragging then return end
     if input.KeyCode == Enum.KeyCode.R then
-        if IsRunning then 
-            ForceStopFull() 
-        else 
-            StartTween() 
-        end
+        ToggleScript()
     end
 end)
 
 StartButton.MouseButton1Click:Connect(function()
-    if IsRunning then 
-        ForceStopFull() 
-    else 
-        StartTween() 
+    if not IsDragging then
+        ToggleScript()
     end
 end)
 
 StopButton.MouseButton1Click:Connect(function()
-    ForceStopFull()
+    if not IsDragging then
+        ForceStopFull()
+    end
 end)
 
 CloseButton.MouseButton1Click:Connect(function()
@@ -1537,8 +1559,10 @@ RunService.Heartbeat:Connect(function()
     local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid then return end
     local isNowRagdolled = IsRagdolled(humanoid)
-    if WasRagdolledLastFrame and not isNowRagdolled and not IsRunning and AllowTpAfterRagdoll then
-        task.spawn(TeleportToPathAndRun)
+    if WasRagdolledLastFrame and not isNowRagdolled then
+        if TpAfterRagdollEnabled and AllowTpAfterRagdoll and not IsRunning then
+            task.spawn(TeleportToPathAndRun)
+        end
     end
     WasRagdolledLastFrame = isNowRagdolled
 end)
@@ -1560,7 +1584,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
     JustTeleported = false
     AllowTpAfterRagdoll = false
     ResetSpeedBoost()
-    task.wait(2)
+    task.wait(1.5)
     AllowTpAfterRagdoll = true
 end)
 
@@ -1574,3 +1598,5 @@ task.spawn(function()
         prebuildAllCallbacks()
     end
 end)
+
+AllowTpAfterRagdoll = true
