@@ -16,14 +16,12 @@ local AnimalsData = require(Datas:WaitForChild("Animals"))
 local AnimalsShared = require(Shared:WaitForChild("Animals"))
 local NumberUtils = require(Utils:WaitForChild("NumberUtils"))
 
+-- ========================================
+-- NEUE DIREKTE SPEED BOOST LOGIK
+-- ========================================
 local SpeedBoostEnabled = true
-local TargetSpeed = 61
-local LERP_ALPHA = 0.35
-local RAMP_SPEED = 0.08
-local CurrentMultiplier = 0
-local LastPosition = nil
-local LastTime = 0
-local CorrectionCount = 0
+local TargetSpeed = 58.5  -- Ground Speed
+local AirSpeed = 58.5     -- Air Speed (GLEICH!)
 
 local TweenToSpeed = 59
 local VELOCITY_LERP_ALPHA = 0.7
@@ -119,6 +117,9 @@ local BasePath2 = {
     Vector3.new(-472.676, -7.098, 98.162),
 }
 
+-- ========================================
+-- GROUND CHECK FUNKTION
+-- ========================================
 local function IsGrounded(hrp)
     local rayParams = RaycastParams.new()
     rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
@@ -126,73 +127,34 @@ local function IsGrounded(hrp)
     return result ~= nil
 end
 
-local function DetectCorrection(hrp)
-    local now = tick()
-    local currentPos = hrp.Position
-    
-    if LastPosition and (now - LastTime) > 0 then
-        local expected = (now - LastTime) * TargetSpeed * CurrentMultiplier
-        local actual = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(LastPosition.X, 0, LastPosition.Z)).Magnitude
-        
-        if expected > 2 and actual < expected * 0.5 then
-            CorrectionCount = CorrectionCount + 1
-            LastPosition = currentPos
-            LastTime = now
-            return true
-        end
-    end
-    
-    LastPosition = currentPos
-    LastTime = now
-    return false
-end
-
+-- ========================================
+-- NEUE DIREKTE SPEED BOOST FUNKTION
+-- ========================================
 local function ApplySpeedBoost(hrp, moveDir)
     if not SpeedBoostEnabled then return 0 end
     
     if moveDir.Magnitude < 0.1 then 
-        CurrentMultiplier = 0.3
         return 0
     end
     
-    local corrected = DetectCorrection(hrp)
-    
-    if corrected then
-        CurrentMultiplier = 0.5
-    else
-        CurrentMultiplier = math.min(1, CurrentMultiplier + RAMP_SPEED)
-        CorrectionCount = math.max(0, CorrectionCount - 0.05)
-    end
-    
-    local safeSpeed = TargetSpeed
-    if CorrectionCount > 3 then
-        safeSpeed = TargetSpeed * 0.8
-    elseif CorrectionCount > 1 then
-        safeSpeed = TargetSpeed * 0.9
-    end
-    
-    local finalSpeed = safeSpeed * CurrentMultiplier
+    -- Check if grounded
     local grounded = IsGrounded(hrp)
-    local alpha = grounded and LERP_ALPHA or (LERP_ALPHA * 0.5)
     
+    -- WÄHLE SPEED: Ground oder Air
+    local targetSpeed = grounded and TargetSpeed or AirSpeed
+    
+    -- ========================================
+    -- DIREKTES SETZEN - KEINE LERP-LIMITS!
+    -- ========================================
     local currentVel = hrp.AssemblyLinearVelocity
-    local targetVel = moveDir.Unit * finalSpeed
-    local newVel = Vector3.new(
-        currentVel.X + (targetVel.X - currentVel.X) * alpha,
-        currentVel.Y,
-        currentVel.Z + (targetVel.Z - currentVel.Z) * alpha
-    )
+    local newVel = moveDir.Unit * targetSpeed
+    hrp.AssemblyLinearVelocity = Vector3.new(newVel.X, currentVel.Y, newVel.Z)
     
-    hrp.AssemblyLinearVelocity = newVel
-    
-    return math.floor(Vector3.new(newVel.X, 0, newVel.Z).Magnitude)
+    return targetSpeed
 end
 
 local function ResetSpeedBoost()
-    CurrentMultiplier = 0.3
-    CorrectionCount = 0
-    LastPosition = nil
-    LastTime = 0
+    -- Nichts zu resetten bei direktem Speed
 end
 
 local function NukeAllPlayerCollisions()
@@ -785,8 +747,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = game.CoreGui
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 220, 0, 420)
-MainFrame.Position = UDim2.new(0.5, -110, 0.5, -210)
+MainFrame.Size = UDim2.new(0, 220, 0, 450)
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -225)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -802,7 +764,7 @@ DragBar.Parent = MainFrame
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundTransparency = 1
-Title.Text = "TWEEN PANEL"
+Title.Text = "TWEEN PANEL - DIRECT"
 Title.TextColor3 = Color3.fromRGB(138, 43, 226)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 14
@@ -908,9 +870,94 @@ Separator2.Size = UDim2.new(1, -20, 0, 1)
 Separator2.Position = UDim2.new(0, 10, 0, 190)
 Separator2.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
+-- ========================================
+-- SPEED SETTINGS
+-- ========================================
+local SpeedSettingsLabel = Instance.new("TextLabel")
+SpeedSettingsLabel.Size = UDim2.new(1, -20, 0, 14)
+SpeedSettingsLabel.Position = UDim2.new(0, 10, 0, 196)
+SpeedSettingsLabel.BackgroundTransparency = 1
+SpeedSettingsLabel.Text = "SPEED SETTINGS"
+SpeedSettingsLabel.TextColor3 = Color3.fromRGB(138, 43, 226)
+SpeedSettingsLabel.Font = Enum.Font.GothamBold
+SpeedSettingsLabel.TextSize = 10
+SpeedSettingsLabel.TextXAlignment = Enum.TextXAlignment.Left
+SpeedSettingsLabel.Parent = MainFrame
+
+local SpeedInputFrame = Instance.new("Frame")
+SpeedInputFrame.Size = UDim2.new(1, -20, 0, 24)
+SpeedInputFrame.Position = UDim2.new(0, 10, 0, 212)
+SpeedInputFrame.BackgroundTransparency = 1
+SpeedInputFrame.Parent = MainFrame
+
+local GroundLabel = Instance.new("TextLabel", SpeedInputFrame)
+GroundLabel.Size = UDim2.new(0, 45, 1, 0)
+GroundLabel.Position = UDim2.new(0, 0, 0, 0)
+GroundLabel.BackgroundTransparency = 1
+GroundLabel.Text = "Ground"
+GroundLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+GroundLabel.Font = Enum.Font.GothamBold
+GroundLabel.TextSize = 10
+GroundLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local GroundSpeedBox = Instance.new("TextBox", SpeedInputFrame)
+GroundSpeedBox.Size = UDim2.new(0, 45, 0, 20)
+GroundSpeedBox.Position = UDim2.new(0, 48, 0, 2)
+GroundSpeedBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+GroundSpeedBox.Text = tostring(TargetSpeed)
+GroundSpeedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+GroundSpeedBox.Font = Enum.Font.Gotham
+GroundSpeedBox.TextSize = 11
+GroundSpeedBox.ClearTextOnFocus = false
+Instance.new("UICorner", GroundSpeedBox).CornerRadius = UDim.new(0, 4)
+
+local AirLabel = Instance.new("TextLabel", SpeedInputFrame)
+AirLabel.Size = UDim2.new(0, 25, 1, 0)
+AirLabel.Position = UDim2.new(0, 100, 0, 0)
+AirLabel.BackgroundTransparency = 1
+AirLabel.Text = "Air"
+AirLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+AirLabel.Font = Enum.Font.GothamBold
+AirLabel.TextSize = 10
+AirLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local AirSpeedBox = Instance.new("TextBox", SpeedInputFrame)
+AirSpeedBox.Size = UDim2.new(0, 45, 0, 20)
+AirSpeedBox.Position = UDim2.new(0, 128, 0, 2)
+AirSpeedBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+AirSpeedBox.Text = tostring(AirSpeed)
+AirSpeedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+AirSpeedBox.Font = Enum.Font.Gotham
+AirSpeedBox.TextSize = 11
+AirSpeedBox.ClearTextOnFocus = false
+Instance.new("UICorner", AirSpeedBox).CornerRadius = UDim.new(0, 4)
+
+GroundSpeedBox.FocusLost:Connect(function()
+    local num = tonumber(GroundSpeedBox.Text)
+    if num and num > 0 then
+        TargetSpeed = num
+    else
+        GroundSpeedBox.Text = tostring(TargetSpeed)
+    end
+end)
+
+AirSpeedBox.FocusLost:Connect(function()
+    local num = tonumber(AirSpeedBox.Text)
+    if num and num > 0 then
+        AirSpeed = num
+    else
+        AirSpeedBox.Text = tostring(AirSpeed)
+    end
+end)
+
+local Separator5 = Instance.new("Frame", MainFrame)
+Separator5.Size = UDim2.new(1, -20, 0, 1)
+Separator5.Position = UDim2.new(0, 10, 0, 242)
+Separator5.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
 local ProgressLabel = Instance.new("TextLabel")
 ProgressLabel.Size = UDim2.new(1, -20, 0, 14)
-ProgressLabel.Position = UDim2.new(0, 10, 0, 196)
+ProgressLabel.Position = UDim2.new(0, 10, 0, 248)
 ProgressLabel.BackgroundTransparency = 1
 ProgressLabel.Text = "GRAB PROGRESS"
 ProgressLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -921,7 +968,7 @@ ProgressLabel.Parent = MainFrame
 
 local ProgressBarBg = Instance.new("Frame")
 ProgressBarBg.Size = UDim2.new(1, -20, 0, 12)
-ProgressBarBg.Position = UDim2.new(0, 10, 0, 212)
+ProgressBarBg.Position = UDim2.new(0, 10, 0, 264)
 ProgressBarBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 ProgressBarBg.BorderSizePixel = 0
 ProgressBarBg.Parent = MainFrame
@@ -944,7 +991,7 @@ FillGradient.Parent = ProgressBarFill
 
 local ProgressPercent = Instance.new("TextLabel")
 ProgressPercent.Size = UDim2.new(0, 40, 0, 12)
-ProgressPercent.Position = UDim2.new(1, -50, 0, 196)
+ProgressPercent.Position = UDim2.new(1, -50, 0, 248)
 ProgressPercent.BackgroundTransparency = 1
 ProgressPercent.Text = "0%"
 ProgressPercent.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -955,7 +1002,7 @@ ProgressPercent.Parent = MainFrame
 
 local PhaseLabel = Instance.new("TextLabel")
 PhaseLabel.Size = UDim2.new(1, -20, 0, 18)
-PhaseLabel.Position = UDim2.new(0, 10, 0, 230)
+PhaseLabel.Position = UDim2.new(0, 10, 0, 282)
 PhaseLabel.BackgroundTransparency = 1
 PhaseLabel.Text = "Idle [R to Start]"
 PhaseLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -966,7 +1013,7 @@ PhaseLabel.Parent = MainFrame
 
 local DebugLabel = Instance.new("TextLabel")
 DebugLabel.Size = UDim2.new(1, -20, 0, 14)
-DebugLabel.Position = UDim2.new(0, 10, 0, 250)
+DebugLabel.Position = UDim2.new(0, 10, 0, 302)
 DebugLabel.BackgroundTransparency = 1
 DebugLabel.Text = ""
 DebugLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
@@ -977,7 +1024,7 @@ DebugLabel.Parent = MainFrame
 
 local StartButton = Instance.new("TextButton")
 StartButton.Size = UDim2.new(0.48, 0, 0, 35)
-StartButton.Position = UDim2.new(0, 10, 0, 270)
+StartButton.Position = UDim2.new(0, 10, 0, 322)
 StartButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 StartButton.Text = "START [R]"
 StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -988,7 +1035,7 @@ Instance.new("UICorner", StartButton).CornerRadius = UDim.new(0, 8)
 
 local StopButton = Instance.new("TextButton")
 StopButton.Size = UDim2.new(0.48, 0, 0, 35)
-StopButton.Position = UDim2.new(0.52, 0, 0, 270)
+StopButton.Position = UDim2.new(0.52, 0, 0, 322)
 StopButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 StopButton.Text = "STOP"
 StopButton.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -999,7 +1046,7 @@ Instance.new("UICorner", StopButton).CornerRadius = UDim.new(0, 8)
 
 local TimerFrame = Instance.new("Frame")
 TimerFrame.Size = UDim2.new(1, -20, 0, 28)
-TimerFrame.Position = UDim2.new(0, 10, 0, 315)
+TimerFrame.Position = UDim2.new(0, 10, 0, 367)
 TimerFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 TimerFrame.BorderSizePixel = 0
 TimerFrame.Parent = MainFrame
@@ -1029,7 +1076,7 @@ BestTimeLabel.Parent = TimerFrame
 
 local SpeedStatusFrame = Instance.new("Frame")
 SpeedStatusFrame.Size = UDim2.new(1, -20, 0, 32)
-SpeedStatusFrame.Position = UDim2.new(0, 10, 0, 350)
+SpeedStatusFrame.Position = UDim2.new(0, 10, 0, 402)
 SpeedStatusFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 SpeedStatusFrame.BorderSizePixel = 0
 SpeedStatusFrame.Parent = MainFrame
@@ -1040,9 +1087,9 @@ local SpeedStatusLabel = Instance.new("TextLabel")
 SpeedStatusLabel.Size = UDim2.new(1, -10, 1, 0)
 SpeedStatusLabel.Position = UDim2.new(0, 5, 0, 0)
 SpeedStatusLabel.BackgroundTransparency = 1
-SpeedStatusLabel.Text = "Speed: 0 | Cor: 0"
-SpeedStatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-SpeedStatusLabel.Font = Enum.Font.GothamBold
+SpeedStatusLabel.Text = "DIRECT - GROUND - 59.5"
+SpeedStatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+SpeedStatusLabel.Font = Enum.Font.GothamBlack
 SpeedStatusLabel.TextSize = 11
 SpeedStatusLabel.TextXAlignment = Enum.TextXAlignment.Center
 SpeedStatusLabel.Parent = SpeedStatusFrame
@@ -1054,18 +1101,17 @@ local function UpdateTimer()
     end
 end
 
-local function UpdateSpeedStatus(speed, corrections)
+local function UpdateSpeedStatus(speed, grounded)
     if IsRunning and CurrentPhase == "ToBrainrot" then
-        SpeedStatusLabel.Text = string.format("Speed: %d | Cor: %d", speed, math.floor(corrections))
-        if corrections > 2 then
-            SpeedStatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        elseif corrections > 0 then
-            SpeedStatusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-        else
+        local mode = grounded and "GROUND" or "AIR"
+        SpeedStatusLabel.Text = string.format("DIRECT - %s - %.1f", mode, speed)
+        if grounded then
             SpeedStatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        else
+            SpeedStatusLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
         end
     else
-        SpeedStatusLabel.Text = "Speed: 0 | Cor: 0"
+        SpeedStatusLabel.Text = "DIRECT - IDLE"
         SpeedStatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
     end
 end
@@ -1129,7 +1175,7 @@ local function ForceStopFull()
     DebugLabel.Text = ""
     ProgressBarFill.Size = UDim2.new(0, 0, 1, 0)
     ProgressPercent.Text = "0%"
-    UpdateSpeedStatus(0, 0)
+    UpdateSpeedStatus(0, true)
 end
 
 local function StartTweenToBase()
@@ -1267,6 +1313,7 @@ local function StartTween()
         local isStealing = humanoid.WalkSpeed <= 25
         local now = tick()
         local isRagdolled = IsRagdolled(humanoid)
+        local grounded = IsGrounded(hrp)
         UpdateProgressBar()
         if CurrentPhase == "ToBrainrot" and IsStealing then
             if IsHit(humanoid, hrp) then
@@ -1278,7 +1325,7 @@ local function StartTween()
             if isStealing and GetTweenToBase() then
                 StartTweenToBase()
             end
-            UpdateSpeedStatus(0, 0)
+            UpdateSpeedStatus(0, true)
             return
         end
         if CurrentPhase == "ToBrainrot" then
@@ -1287,13 +1334,13 @@ local function StartTween()
                 StopMovement(hrp)
                 PhaseLabel.Text = "Ragdolled - Waiting..."
                 PhaseLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
-                UpdateSpeedStatus(0, CorrectionCount)
+                UpdateSpeedStatus(0, grounded)
                 return
             end
             if CurrentWaypointIndex > #AllWaypoints then
                 ReachedFinalWaypoint = true
                 StopMovement(hrp)
-                UpdateSpeedStatus(0, CorrectionCount)
+                UpdateSpeedStatus(0, grounded)
                 if StealFinished and not HasTransitionedToBase then
                     if GetTweenToBase() then
                         StartTweenToBase()
@@ -1339,14 +1386,14 @@ local function StartTween()
             end
             local moveDir = flatDiff.Unit
             local currentSpeed = SetVelocityWithSpeedBoost(hrp, moveDir)
-            UpdateSpeedStatus(currentSpeed, CorrectionCount)
+            UpdateSpeedStatus(currentSpeed, grounded)
             local distToAnimal = getDistanceToTarget(hrp)
             local distToPrompt = getDistanceToPrompt(hrp)
             DebugLabel.Text = string.format("WP:%d/%d | Ani:%.0f | Prm:%.0f", CurrentWaypointIndex, #AllWaypoints, distToAnimal, distToPrompt)
             return
         end
         if CurrentPhase == "ToBase" then
-            UpdateSpeedStatus(0, 0)
+            UpdateSpeedStatus(0, grounded)
             if isRagdolled then
                 StopMovement(hrp)
                 PhaseLabel.Text = "Ragdolled - Waiting..."
