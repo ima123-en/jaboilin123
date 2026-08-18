@@ -88,66 +88,51 @@ end
 
 do
 	local _xchan, _lastTry, _attempts = nil, 0, 0
-	local _deepScans, _lastDeep, _mod = 0, 0, nil
+	local _mod = nil
 	local BOOT_T0 = os.clock()
-	local function _channelCount(t)
-		if type(t) ~= "table" then return 0 end
-		local ok, hits = pcall(function()
-			local h, n = 0, 0
-			for _, v in next, t do
-				n += 1
-				if type(v) == "table" and type(rawget(v, "CacheTable")) == "table" then h += 1 end
-				if n >= 200 then break end
-			end
-			return h
-		end)
-		return (ok and hits) or 0
-	end
+
 	local function _getModule()
 		if _mod then return _mod end
 		local ok, m = pcall(function() return require(ReplicatedStorage.Packages.Synchronizer) end)
-		if ok and type(m) == "table" then _mod = m; return _mod end
-		return nil
+		if ok and type(m) == "table" then _mod = m end
+		return _mod
 	end
-	local function _probe(mod)
+
+	local function _findCache(mod)
 		local gu = (debug and debug.getupvalue) or getupvalue
 		if type(gu) ~= "function" then return nil end
-		local best, bestN = nil, 0
-		local function consider(t)
-			local n = _channelCount(t)
-			if n > bestN then best, bestN = t, n end
-		end
-		local ok, up = pcall(gu, mod.Get, 9)
-		if ok and type(up) == "table" then
-			consider(rawget(up, 3))
-			if bestN > 0 then return best end
-			consider(up)
-			if bestN > 0 then return best end
-		end
-		return nil
-	end
-	local function _deepScan(mod)
-		local gu = (debug and debug.getupvalue) or getupvalue
-		if type(gu) ~= "function" then return nil end
-		local best, bestN = nil, 0
-		local function consider(t)
-			local n = _channelCount(t)
-			if n > bestN then best, bestN = t, n end
+		local function isChannelTable(t)
+			if type(t) ~= "table" then return false end
+			local n, hits = 0, 0
+			for _, v in next, t do
+				n += 1
+				if type(v) == "table" and rawget(v, "CacheTable") then hits += 1 end
+				if n >= 5 then break end
+			end
+			return hits > 0
 		end
 		for _, fn in next, mod do
 			if type(fn) == "function" then
-				for i = 1, 24 do
-					local o, u = pcall(gu, fn, i)
-					if not o then break end
-					if type(u) == "table" then
-						consider(u)
-						for j = 1, 4 do consider(rawget(u, j)) end
+				for i = 1, 30 do
+					local ok2, up = pcall(gu, fn, i)
+					if not ok2 then break end
+					if type(up) == "table" then
+						local zero = rawget(up, 0)
+						if isChannelTable(zero) then return zero end
+						for k, v in next, up do
+							if isChannelTable(v) then return v end
+							if type(v) == "table" then
+								local z2 = rawget(v, 0)
+								if isChannelTable(z2) then return z2 end
+							end
+						end
 					end
 				end
 			end
 		end
-		return best
+		return nil
 	end
+
 	local function _getChans()
 		if _xchan then return _xchan end
 		local gap = (os.clock() - BOOT_T0) < 3.0 and 0.10 or 0.5
@@ -156,23 +141,19 @@ do
 		local mod = _getModule()
 		if not mod or _attempts >= 40 then return nil end
 		_attempts += 1
-		local found = _probe(mod)
-		if not found and _deepScans < 3 and (os.clock() - _lastDeep) > 1.5 then
-			_lastDeep = os.clock(); _deepScans += 1
-			found = _deepScan(mod)
-		end
+		local found = _findCache(mod)
 		if found then _xchan = found end
 		return _xchan
 	end
+
 	getgenv().SyncGet = function(name)
 		local t = _getChans()
 		if not t or not name then return nil end
 		local ok, cd = pcall(rawget, t, name)
 		if ok and type(cd) == "table" then return cd end
-		local ok2, cd2 = pcall(function() return t[name] end)
-		if ok2 and type(cd2) == "table" then return cd2 end
 		return nil
 	end
+
 	getgenv().sProp = function(ch, key)
 		if type(ch) ~= "table" or not key then return nil end
 		local ct = rawget(ch, "CacheTable")
@@ -187,12 +168,16 @@ do
 		if ok then return v2 end
 		return nil
 	end
+
 	getgenv().getChannel = function(plot)
 		local ch = getgenv().SyncGet(plot.Name)
 		if ch then return ch end
 		local ord; pcall(function() ord = plot:GetAttribute("Order") end)
-		if ord ~= nil then ch = getgenv().SyncGet("Plot" .. tostring(ord)) end
-		return ch
+		if ord ~= nil then
+			ch = getgenv().SyncGet("Plot" .. tostring(ord))
+			if ch then return ch end
+		end
+		return nil
 	end
 end
 
@@ -1004,10 +989,6 @@ do
 		if not plots then return end
 		local newCache = {}
 		
-		local rd = ReplicatedStorage:FindFirstChild("Packages")
-			and ReplicatedStorage.Packages:FindFirstChild("Synchronizer")
-			and ReplicatedStorage.Packages.Synchronizer:FindFirstChild("RequestData")
-		
 		for _, plot in ipairs(plots:GetChildren()) do
 			pcall(function()
 				if isMyBase2(plot.Name) then return end
@@ -1028,15 +1009,7 @@ do
 				end
 				if ownerName == "" then return end
 				
-				local al = getgenv().sProp(ch, "AnimalList")
-				
-				if type(al) ~= "table" and rd then
-					local ok, data = pcall(function() return rd:InvokeServer(plot.Name) end)
-					if ok and type(data) == "table" then
-						al = data.AnimalList or data.Animals
-					end
-				end
-				
+				local al = getgenv().sProp(ch, "Animals") or getgenv().sProp(ch, "AnimalList")
 				if type(al) ~= "table" then return end
 				
 				for slot, ad in pairs(al) do
